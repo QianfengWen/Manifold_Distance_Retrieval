@@ -45,7 +45,7 @@ class Scidocs(Dataloader):
         return passage_ids, passage_texts
     
 
-    def create_relevance_map(self, question_sub, passage_sub):
+    def create_relevance_map(self):
         relevance_map = defaultdict(dict)
         for qrel in self.dataset.qrels_iter():
             query_id = qrel.query_id
@@ -55,11 +55,11 @@ class Scidocs(Dataloader):
             if relevance <= 0:
                 continue
 
-            if query_id in question_sub:
-                query_id = question_sub[query_id]
+            if query_id in self.question_sub:
+                query_id = self.question_sub[query_id]
             
-            if doc_id in passage_sub:
-                doc_id = passage_sub[doc_id]
+            if doc_id in self.passage_sub:
+                doc_id = self.passage_sub[doc_id]
             
             relevance_map[query_id][doc_id] = relevance
         

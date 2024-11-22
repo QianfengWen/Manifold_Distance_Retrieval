@@ -41,8 +41,12 @@ def retrieve_k_manifold_baseline(G: nx.Graph, query_embeddings: np.ndarray, pass
 
         # find the shortest path
         shortest_path = nx.single_source_dijkstra_path_length(G_copy, query_idx, weight=weight)
+
+        # pop the query node
+        shortest_path.pop(query_idx)
+        
         sorted_shortest_path = {k_: v_ for k_, v_ in sorted(shortest_path.items(), key=lambda item: item[1])}
-            
+
         indices = list(sorted_shortest_path.keys())[:top_k] 
         indices_set.append(indices)
     
