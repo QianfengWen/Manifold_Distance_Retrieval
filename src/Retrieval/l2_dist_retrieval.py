@@ -16,7 +16,7 @@ def retrieve_k_l2(query_embeddings: np.ndarray, passage_embeddings: np.ndarray, 
         raise ValueError("Embedding dimensions of queries and passages do not match")
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    print(f"Using device: {device} for l2 distance retrieval")
     query_embeddings = torch.tensor(query_embeddings, device=device)
     passage_embeddings = torch.tensor(passage_embeddings, device=device)
 

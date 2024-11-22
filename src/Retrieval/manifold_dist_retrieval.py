@@ -2,7 +2,7 @@ from copy import deepcopy
 import torch
 import numpy as np
 import networkx as nx
-import faiss
+from tqdm import tqdm
 
 def retrieve_k_manifold_baseline(G: nx.Graph, query_embeddings: np.ndarray, passage_embeddings: np.ndarray, k_neighbors: int=3, weight=1, top_k: int=100) -> np.ndarray:
     """
@@ -18,7 +18,7 @@ def retrieve_k_manifold_baseline(G: nx.Graph, query_embeddings: np.ndarray, pass
     :return: numpy array of shape (num_queries, top_k) containing the indices of the retrieved passages
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    print(f"Using device: {device} for manifold distance retrieval")
 
     query_embeddings = torch.tensor(query_embeddings, device=device)
     passage_embeddings = torch.tensor(passage_embeddings, device=device)
@@ -28,7 +28,7 @@ def retrieve_k_manifold_baseline(G: nx.Graph, query_embeddings: np.ndarray, pass
 
 
     indices_set = []
-    for i in range(len(query_embeddings)):
+    for i in tqdm(range(len(query_embeddings)), desc="Processing queries"):
         G_copy = deepcopy(G)
         query_idx = len(G_copy.nodes)
         G_copy.add_node(query_idx) # add query node

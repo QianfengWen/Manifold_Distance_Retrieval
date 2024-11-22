@@ -1,3 +1,9 @@
+# ignore env
+PyManifold/
+
+# ignore data
+data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -5,9 +11,6 @@ __pycache__/
 
 # C extensions
 *.so
-
-# ignore all files in the data directory
-src/data/*
 
 # Distribution / packaging
 .Python
