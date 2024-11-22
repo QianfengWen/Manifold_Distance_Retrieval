@@ -1,6 +1,5 @@
 import networkx as nx
 from tqdm import tqdm
-import numpy as np
 import torch
 import json
 
@@ -60,3 +59,12 @@ def save_graph(G, file_path):
         json.dump(G_New, f, indent=4)
 
     return
+
+def read_graph(file_path):
+    with open(file_path, 'r') as f:
+        G_New = json.load(f)
+    G = nx.Graph()
+    for node in G_New:
+        for neighbor, weight in G_New[node].items():
+            G.add_edge(int(node), int(neighbor), weight=float(weight))
+    return G

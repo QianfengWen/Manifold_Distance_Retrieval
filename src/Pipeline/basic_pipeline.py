@@ -4,80 +4,104 @@ import json, os, pickle
 
 from src.Retrieval.l2_dist_retrieval import retrieve_k_l2
 from src.Retrieval.manifold_dist_retrieval import retrieve_k_manifold_baseline
-from src.Evaluation.evaluation import evaluate, recall_k, precision_k, mean_average_precision_k
-from src.Dataset.scidocs import Scidocs
-from src.Graph.read_graph import read_graph
-from src.Graph.construct_graph import construct_graph
-
-experiment_name = "scidocs, k=10, weight=1"
-os.makedirs(os.path.join("results", experiment_name), exist_ok=True)
-
-############ Load data ############
-dataloader = Scidocs()
-question_ids, _, passage_ids, _, relevance_map = dataloader.load_data()
+from src.Evaluation.evaluation import evaluate
+from src.Graph.graph import construct_graph, read_graph
+from src.Embedding.embedding import create_embeddings, load_embeddings
 
 
-############ Load embeddings ############
-query_embeddings_path = "data/scidoc/tas-b-query_embeddings.pkl"
-passage_embeddings_path = "data/scidoc/tas-b-doc_embeddings.pkl"
 
 
-with open(query_embeddings_path, "rb") as f:
-    query_embeddings = pickle.load(f)
-    assert isinstance(query_embeddings, np.ndarray), "query_embeddings should be a numpy array"
+class Pipeline:
+    def __init__(self, experiment_name, **kwargs):
+        experiment_path = os.path.join("results", experiment_name)
+        self.experiment_path = experiment_path
+        os.makedirs(experiment_path, exist_ok=True)    
 
-with open(passage_embeddings_path, "rb") as f:
-    passage_embeddings = pickle.load(f)
-    assert isinstance(passage_embeddings, np.ndarray), "passage_embeddings should be a numpy array"
+        try:
+            self.dataloader = kwargs["dataloader"]
 
-############ Manifold Setup ############
-k_neighbours = 10
-weight = 1
+            self.model_name = kwargs.get("model_name", None)
+            self.query_embeddings_path = kwargs["query_embeddings_path"]
+            self.passage_embeddings_path = kwargs["passage_embeddings_path"]
 
-graph_path = "data/scidoc/graph_root_10.json"
-G = read_graph(graph_path)
-# G = construct_graph(passage_embeddings, k_neighbours, graph_path)
+            self.create_new_graph = kwargs["create_new_graph"]
+            self.graph_path = kwargs["graph_path"]
+            self.k_neighbours = kwargs["k_neighbours"]
+            self.weight = kwargs.get("weight", 1)
+
+            self.evaluation_functions = kwargs["evaluation_functions"]
+            self.k_list = kwargs["k_list"]
+        
+        except KeyError as e:
+            print(f"Missing argument: {e}")
+            raise
+    
+
+    def run_pipeline(self):
+        print(f"********************* Running Experiments: {self.experiment_path} *********************")
+
+        print("********************* Loading Data *********************")
+        question_ids, question_texts, passage_ids, passage_texts, relevance_map = self.load_data(self.dataloader)
+        
+        print("********************* Handling Embeddings *********************")
+        query_embeddings, passage_embeddings = self.handle_embeddings(self.model_name, self.query_embeddings_path, self.passage_embeddings_path, question_texts, passage_texts)
+        
+        print("********************* Handling Graph *********************")
+        G = self.handle_graph(self.create_new_graph, passage_embeddings, self.k_neighbours, self.graph_path)
+        
+        print("********************* Running Evaluation *********************")
+        self.run_evaluation(self.k_list, self.evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, G, self.k_neighbours, self.weight)
 
 
-############ Evaluation Setup ############
-k_list = [1, 3, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-evaluation_functions = [recall_k, precision_k, mean_average_precision_k]
+    def load_data(self, dataloader):
+        return dataloader.load_data()
 
 
-############ Begin pipeline ############
+    def handle_embeddings(self, model_name, query_embeddings_path, passage_embeddings_path, query_texts, passage_texts):
+        if model_name:
+            create_embeddings(model_name, query_texts, passage_texts, query_embeddings_path, passage_embeddings_path)
 
-baseline_retrieve_results = retrieve_k_l2(query_embeddings, passage_embeddings, max(k_list))
-manifold_retrieve_results = retrieve_k_manifold_baseline(G, query_embeddings, passage_embeddings, k_neighbours, weight, max(k_list))
+        else:
+            load_embeddings(query_embeddings_path, passage_embeddings_path)
+    
 
-# save the retrieve results
-baseline_path = os.path.join("results", experiment_name, "baseline_retrieval_results.pkl")
-with open(baseline_path, "bw") as f:
-    pickle.dump(baseline_retrieve_results, f)
+    def handle_graph(self, create_new, passage_embeddings, k_neighbours, graph_path):
+        if create_new:
+            G = construct_graph(passage_embeddings, k_neighbours, graph_path)
+            return G
 
-manifold_path = os.path.join("results", experiment_name, "manifold_retrieval_results.pkl")
-with open(manifold_path, "bw") as f:
-    pickle.dump(manifold_retrieve_results, f)
+        else:
+            G = read_graph(graph_path)
+            return G
+        
 
-print(manifold_retrieve_results.shape)
+    def run_evaluation(self, k_list, evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, G, k_neighbours, weight):
+        baseline_retrieve_results = retrieve_k_l2(query_embeddings, passage_embeddings, max(k_list))
+        manifold_retrieve_results = retrieve_k_manifold_baseline(G, query_embeddings, passage_embeddings, k_neighbours, weight, max(k_list))
 
+        baseline_path = os.path.join(self.experiment_path, "baseline_retrieval_results.pkl")
+        with open(baseline_path, "bw") as f:
+            pickle.dump(baseline_retrieve_results, f)
 
-baseline_results = defaultdict(dict)
-manifold_results = defaultdict(dict)
+        manifold_path = os.path.join(self.experiment_path, "manifold_retrieval_results.pkl")
+        with open(manifold_path, "bw") as f:
+            pickle.dump(manifold_retrieve_results, f)
+        
 
-for evaluation_function in evaluation_functions:
-    for k in k_list:
-        baseline_results[evaluation_function.__name__][k] = evaluate(question_ids, passage_ids, baseline_retrieve_results, relevance_map, evaluation_function, k)
+        baseline_results = defaultdict(dict) 
+        manifold_results = defaultdict(dict)
+        for evaluation_function in evaluation_functions:
+            for k in k_list:
+                baseline_results[evaluation_function.__name__][k] = evaluate(question_ids, passage_ids, baseline_retrieve_results, relevance_map, evaluation_function, k)
 
-for evaluation_function in evaluation_functions:
-    for k in k_list:
-        manifold_results[evaluation_function.__name__][k] = evaluate(question_ids, passage_ids, manifold_retrieve_results, relevance_map, evaluation_function, k)
-
-# Save results
-baseline_path = os.path.join("results", experiment_name, "baseline_evaluation_results.json")
-with open(baseline_path, "w") as f:
-    json.dump(baseline_results, f, indent=4)
-
-manifold_path = os.path.join("results", experiment_name, "manifold_evaluation_results.json")
-with open(manifold_path, "w") as f:
-    json.dump(manifold_results, f, indent=4)
-
+        for evaluation_function in evaluation_functions:
+            for k in k_list:
+                manifold_results[evaluation_function.__name__][k] = evaluate(question_ids, passage_ids, manifold_retrieve_results, relevance_map, evaluation_function, k)
+        
+        baseline_path = os.path.join(self.experiment_path, "baseline_evaluation_results.json")
+        with open(baseline_path, "w") as f:
+            json.dump(baseline_results, f, indent=4)
+        
+        manifold_path = os.path.join(self.experiment_path, "manifold_evaluation_results.json")
+        with open(manifold_path, "w") as f:
+            json.dump(manifold_results, f, indent=4)
