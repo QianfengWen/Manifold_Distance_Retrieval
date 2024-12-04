@@ -1,6 +1,7 @@
 import pickle
 import torch
 import numpy as np
+import os
 from sentence_transformers import SentenceTransformer
 
 
@@ -18,6 +19,8 @@ def create_embeddings(model_name, query_texts, passage_texts, query_embeddings_p
 
 
 def save_embeddings(query_embeddings, passage_embeddings, query_embeddings_path, passage_embeddings_path):
+    os.makedirs(os.path.dirname(query_embeddings_path), exist_ok=True)
+    os.makedirs(os.path.dirname(passage_embeddings_path), exist_ok=True)
     with open(query_embeddings_path, "wb") as f:
         pickle.dump(query_embeddings, f)
 

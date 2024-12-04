@@ -2,9 +2,9 @@ from src.Dataset.dataloader import Dataloader
 from collections import defaultdict
 import ir_datasets
 
-class Scidocs(Dataloader):
+class Msmarco(Dataloader):
     def load_dataset(self):
-        dataset = ir_datasets.load("beir/scidocs")
+        dataset = ir_datasets.load("beir/msmarco/dev")
         return dataset
     
     def load_questions(self):
@@ -64,3 +64,5 @@ class Scidocs(Dataloader):
             relevance_map[query_id][doc_id] = relevance
         
         return relevance_map
+    
+

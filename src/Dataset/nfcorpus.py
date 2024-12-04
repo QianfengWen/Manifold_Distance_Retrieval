@@ -2,9 +2,9 @@ from src.Dataset.dataloader import Dataloader
 from collections import defaultdict
 import ir_datasets
 
-class Scidocs(Dataloader):
+class NFCorpus(Dataloader):
     def load_dataset(self):
-        dataset = ir_datasets.load("beir/scidocs")
+        dataset = ir_datasets.load("beir/nfcorpus/dev")
         return dataset
     
     def load_questions(self):
@@ -51,9 +51,6 @@ class Scidocs(Dataloader):
             query_id = qrel.query_id
             doc_id = qrel.doc_id
             relevance = qrel.relevance
-            
-            if relevance <= 0:
-                continue
 
             if query_id in self.question_sub:
                 query_id = self.question_sub[query_id]
@@ -64,3 +61,4 @@ class Scidocs(Dataloader):
             relevance_map[query_id][doc_id] = relevance
         
         return relevance_map
+    

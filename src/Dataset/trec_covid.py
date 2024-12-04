@@ -2,9 +2,9 @@ from src.Dataset.dataloader import Dataloader
 from collections import defaultdict
 import ir_datasets
 
-class Scidocs(Dataloader):
+class TrecCovid(Dataloader):
     def load_dataset(self):
-        dataset = ir_datasets.load("beir/scidocs")
+        dataset = ir_datasets.load("beir/trec-covid")
         return dataset
     
     def load_questions(self):
@@ -52,7 +52,7 @@ class Scidocs(Dataloader):
             doc_id = qrel.doc_id
             relevance = qrel.relevance
             
-            if relevance <= 0:
+            if relevance < 0:
                 continue
 
             if query_id in self.question_sub:
