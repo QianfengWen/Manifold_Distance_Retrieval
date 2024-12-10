@@ -3,25 +3,40 @@ import torch
 import numpy as np
 import networkx as nx
 from tqdm import tqdm
-from collections import deque
+from heapq import heappush, heappop
 
-def bfs_shortest_path(G: nx.Graph, query_idx: int, top_k: int=100) -> dict:
-    # Use deque for O(1) pop operations
-    queue = deque([query_idx])
-    visited = {query_idx: 0}  # Combine visited set and shortest_path_length dict
+def dijkstra_shortest_path(G: nx.Graph, query_idx: int, top_k: int=100) -> dict:
+    """
+    Use Dijkstra's algorithm to find the shortest path from the query node to the top-k nodes.
+    """
+    distances = {node: float('infinity') for node in G.nodes()}
+    distances[query_idx] = 0
     
-    while queue and len(visited) < top_k:
-        current = queue.popleft()  # O(1) operation instead of O(n)
-        current_dist = visited[current]
+    # Priority queue entries are tuples of (distance, node)
+    pq = [(0, query_idx)]
+    visited = {}
+    
+    while pq and len(visited) < top_k:
+        current_dist, current = heappop(pq)
         
-        # Get neighbors and their distances in one go
-        for neighbor in G[current]:  # More efficient neighbor iteration
-            if neighbor not in visited:
-                visited[neighbor] = current_dist + 1
-                queue.append(neighbor)
+        # Skip if we've already found a better path
+        if current in visited:
+            continue
+            
+        visited[current] = current_dist
+        
+        # Explore neighbors
+        for neighbor in G[current]:
+            if neighbor in visited:
+                continue
                 
-                if len(visited) >= top_k:
-                    break
+            # Get edge weight, default to 1 if not specified
+            weight = G[current][neighbor].get('weight', 1)
+            distance = current_dist + weight
+            
+            if distance < distances[neighbor]:
+                distances[neighbor] = distance
+                heappush(pq, (distance, neighbor))
     
     return visited
 
@@ -60,7 +75,7 @@ def retrieve_k_manifold_baseline(G: nx.Graph, query_embeddings: np.ndarray, pass
 
         # find the shortest path
         # shortest_path = nx.single_source_dijkstra_path_length(G=G_copy, source=query_idx, cutoff=1, weight=weight)
-        shortest_path = bfs_shortest_path(G=G_copy, query_idx=query_idx, top_k=top_k)
+        shortest_path = dijkstra_shortest_path(G=G_copy, query_idx=query_idx, top_k=top_k)
 
         # pop the query node
         shortest_path.pop(query_idx)
