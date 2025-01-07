@@ -5,23 +5,46 @@ import numpy as np
 from scipy.linalg import eigh
 from tqdm import tqdm
 import json
+import pdb
 
-# assert mode in ["connectivity", "distance"], "mode must be either 'connectivity' or 'distance'"
+# knn graph vs. connected graph
 # assert distance in ["l2", "spectral"], "distance must be either 'l2' or 'spectral'"
+# assert mode in ["connectivity", "distance"], "mode must be either 'connectivity' or 'distance'", # connectivity == unweighted, distance == weighted
 # assert isinstance(n_components, int) if distance == "spectral" else n_components is None, "n_components must be an integer if distance is 'spectral' or None if distance is 'l2'"
 
-def construct_knn_graph(passages_embeddings, file_path, k, distance="l2", mode="connectivity", n_components=None):
+def construct_graph(passage_embeddings, file_path, k=100, graph_type="knn", distance="l2", mode="connectivity", n_components=None, max_edges=None, max_percentage=None):
+    """
+    Constructs a graph based on k-nearest neighbors and returns a NetworkX graph.
+    """
+    assert graph_type in ["knn", "connected"], "graph must be either 'knn' or 'connected'"
+    assert distance in ["l2", "spectral"], "distance must be either 'l2' or 'spectral'"
+    assert mode in ["connectivity", "distance"], "mode must be either 'connectivity' or 'distance'" # connectivity == unweighted, distance == weighted
+    assert isinstance(n_components, int) if distance == "spectral" else n_components is None, "n_components must be an integer if distance is 'spectral' or None if distance is 'l2'"
+    
+    if graph_type == "knn":
+        return construct_knn_graph(passage_embeddings, file_path, k, distance, mode, n_components)
+    elif graph_type == "connected":
+        return construct_connected_graph(passage_embeddings, file_path, k, max_edges, max_percentage, distance, mode, n_components)
+    else:
+        raise ValueError(f"Invalid graph type: {graph_type}")
+
+
+def construct_knn_graph(passages_embeddings, k, file_path, distance="l2", mode="connectivity", n_components=None):
     """
     Constructs a weighted graph based on k-nearest neighbors and returns a NetworkX graph.
     """
     embeddings = create_spectral_embedding(passages_embeddings, k, n_components) if distance == "spectral" else passages_embeddings
+    print("Finished creating embeddings")
     adjacency_matrix = kneighbors_graph(embeddings, n_neighbors=k, mode=mode, include_self=False)
+    print("Finished creating adjacency matrix")
     graph = nx.from_scipy_sparse_array(adjacency_matrix)
+    print("Finished creating graph")
 
     save_graph(graph, file_path)
     return graph
 
 
+# Manifold Ranking
 def construct_connected_graph(passages_embeddings, file_path, k=100, max_edges=None, max_percentage=None, distance="l2", mode="connectivity", n_components=None):
     """
     Constructs a connected graph with optional limits on the number of edges.
@@ -95,51 +118,59 @@ def read_graph(file_path):
     return G
 
 
-
 # helper for spectral embedding
+def construct_similarity_graph(embeddings, k):
+    """
+    Constructs a k-nearest neighbor similarity graph from input embeddings.
+    """
+    adjacency_matrix = kneighbors_graph(
+        embeddings,
+        n_neighbors=k,
+        mode='connectivity',
+        include_self=False,
+        metric='euclidean'
+    )
+    return adjacency_matrix.toarray()
+
+def compute_laplacian(adjacency_matrix, normalized):
+    """
+    Computes the Laplacian matrix from an adjacency matrix.
+    """
+    degree_matrix = np.diag(adjacency_matrix.sum(axis=1))
+    print("Finished creating degree matrix")
+    if normalized:
+        with np.errstate(divide='ignore'):
+            d_inv_sqrt = np.diag(1.0 / np.sqrt(degree_matrix.diagonal()))
+            print("Finished creating d_inv_sqrt")
+            d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0 
+            print("Finished creating d_inv_sqrt")
+        laplacian = np.identity(adjacency_matrix.shape[0]) - d_inv_sqrt @ adjacency_matrix @ d_inv_sqrt
+        print("Finished creating laplacian matrix")
+    else:
+        laplacian = degree_matrix - adjacency_matrix
+        print("Finished creating laplacian matrix")
+    return laplacian
+
+def compute_spectral_embedding(laplacian, n_components):
+    """
+    Computes spectral embeddings from the Laplacian matrix.
+    """
+    _, eigenvectors = eigh(laplacian)
+
+    embedding = eigenvectors[:, 1:n_components+1]
+    return normalize(embedding, norm='l2', axis=1)
+
 def create_spectral_embedding(embeddings, k, n_components, normalized=True):
     """
     Creates spectral embeddings from input embeddings by constructing a k-nearest neighbor graph,
     """
-    def construct_similarity_graph(embeddings, k):
-        """
-        Constructs a k-nearest neighbor similarity graph from input embeddings.
-        """
-        adjacency_matrix = kneighbors_graph(
-            embeddings,
-            n_neighbors=k,
-            mode='connectivity',
-            include_self=False,
-            metric='euclidean'
-        )
-        return adjacency_matrix.toarray()
-
-    def compute_laplacian(adjacency_matrix, normalized):
-        """
-        Computes the Laplacian matrix from an adjacency matrix.
-        """
-        degree_matrix = np.diag(adjacency_matrix.sum(axis=1))
-        if normalized:
-            with np.errstate(divide='ignore'):
-                d_inv_sqrt = np.diag(1.0 / np.sqrt(degree_matrix.diagonal()))
-                d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0 
-            laplacian = np.identity(adjacency_matrix.shape[0]) - d_inv_sqrt @ adjacency_matrix @ d_inv_sqrt
-        else:
-            laplacian = degree_matrix - adjacency_matrix
-        return laplacian
-
-    def compute_spectral_embedding(laplacian, n_components):
-        """
-        Computes spectral embeddings from the Laplacian matrix.
-        """
-        _, eigenvectors = eigh(laplacian)
-
-        embedding = eigenvectors[:, 1:n_components+1]
-        return normalize(embedding, norm='l2', axis=1)
 
     adjacency_matrix = construct_similarity_graph(embeddings, k)
+    print("Finished creating similarity graph")
     laplacian = compute_laplacian(adjacency_matrix, normalized)
+    print("Finished creating laplacian matrix")
     spectral_embeddings = compute_spectral_embedding(laplacian, n_components)
+    print("Finished creating spectral embeddings")
 
     return spectral_embeddings
 

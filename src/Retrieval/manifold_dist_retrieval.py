@@ -30,8 +30,8 @@ def dijkstra_shortest_path(G: nx.Graph, query_idx: int, top_k: int=100) -> dict:
             if neighbor in visited:
                 continue
                 
-            # Get edge weight, default to 1 if not specified
-            weight = G[current][neighbor].get('weight', 1)
+            # Get edge weight 
+            weight = G[current][neighbor]["weight"]
             distance = current_dist + weight
             
             if distance < distances[neighbor]:
@@ -40,15 +40,70 @@ def dijkstra_shortest_path(G: nx.Graph, query_idx: int, top_k: int=100) -> dict:
     
     return visited
 
-def retrieve_k_manifold_baseline(G: nx.Graph, query_embeddings: np.ndarray, passage_embeddings: np.ndarray, k_neighbors: int=3, weight=1, top_k: int=100) -> np.ndarray:
+# def retrieve_k_manifold_baseline(G: nx.Graph, query_embeddings: np.ndarray, passage_embeddings: np.ndarray, k_neighbors: int=3, weight=1, top_k: int=100) -> np.ndarray:
+#     """
+#     Retrieve the top-k passages for each query using the manifold distance retrieval method.
+
+#     We assume that the embeddings are already normalized.
+
+#     :param G: NetworkX graph representing the manifold
+#     :param embedding_space: faiss index containing the embeddings of the passages
+#     :param query_embeddings: numpy array of shape (num_queries, embedding_dim)
+#     :param k_neighbors: Number of neighbors to consider for each query
+#     :param top_k: Number of passages to retrieve for each query
+#     :return: numpy array of shape (num_queries, top_k) containing the indices of the retrieved passages
+#     """
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     print(f"Using device: {device} for manifold distance retrieval")
+
+#     query_embeddings = torch.tensor(query_embeddings, device=device)
+#     passage_embeddings = torch.tensor(passage_embeddings, device=device)
+
+#     l2_distance_matrix = torch.cdist(query_embeddings, passage_embeddings, p=2)
+#     all_distances, all_indices = torch.topk(l2_distance_matrix, k_neighbors, dim=1, largest=False, sorted=True)
+#     indices_set = []
+#     for i in tqdm(range(len(query_embeddings)), desc="Processing queries"):
+#         query_idx = len(G.nodes)
+#         G.add_node(query_idx) # add query node
+        
+#         distances = all_distances[i].cpu().numpy().flatten()
+#         indices = all_indices[i].cpu().numpy().flatten()
+
+#         for j in range(k_neighbors):
+#             G.add_edge(len(G.nodes) - 1, indices[j], weight=distances[j])
+    
+#         # find the shortest path
+#         # shortest_path = nx.single_source_dijkstra_path_length(G=G_copy, source=query_idx, cutoff=1, weight=weight)
+#         shortest_path = dijkstra_shortest_path(G=G, query_idx=query_idx, top_k=top_k)
+
+#         # pop the query node
+#         shortest_path.pop(query_idx)
+        
+#         sorted_shortest_path = {k_: v_ for k_, v_ in sorted(shortest_path.items(), key=lambda item: item[1])}
+
+#         indices = list(sorted_shortest_path.keys())[:top_k] 
+#         indices_set.append(indices)
+
+#         # delete new added nodes and edges
+#         G.remove_node(query_idx)
+    
+#     return np.array(indices_set)
+
+def retrieve_k_manifold_baseline(
+    G: nx.Graph, 
+    query_embeddings: np.ndarray, 
+    passage_embeddings: np.ndarray, 
+    k_neighbors: int = 3,  
+    top_k: int = 100
+) -> np.ndarray:
     """
     Retrieve the top-k passages for each query using the manifold distance retrieval method.
 
     We assume that the embeddings are already normalized.
 
     :param G: NetworkX graph representing the manifold
-    :param embedding_space: faiss index containing the embeddings of the passages
     :param query_embeddings: numpy array of shape (num_queries, embedding_dim)
+    :param passage_embeddings: numpy array of shape (num_passages, embedding_dim)
     :param k_neighbors: Number of neighbors to consider for each query
     :param top_k: Number of passages to retrieve for each query
     :return: numpy array of shape (num_queries, top_k) containing the indices of the retrieved passages
@@ -59,34 +114,50 @@ def retrieve_k_manifold_baseline(G: nx.Graph, query_embeddings: np.ndarray, pass
     query_embeddings = torch.tensor(query_embeddings, device=device)
     passage_embeddings = torch.tensor(passage_embeddings, device=device)
 
+    # Compute initial distances to find candidate neighbors
     l2_distance_matrix = torch.cdist(query_embeddings, passage_embeddings, p=2)
     all_distances, all_indices = torch.topk(l2_distance_matrix, k_neighbors, dim=1, largest=False, sorted=True)
+
     indices_set = []
+    # We'll assume that the query node index does not collide with existing nodes.
+    # One way to ensure uniqueness is to start from a large number or the max node index + 1.
+    # For safety, find the max existing node index:
+    max_node_idx = max(G.nodes) if len(G.nodes) > 0 else 0
+    current_query_node = max_node_idx + 1
+
     for i in tqdm(range(len(query_embeddings)), desc="Processing queries"):
-        G_copy = deepcopy(G)
-        query_idx = len(G_copy.nodes)
-        G_copy.add_node(query_idx) # add query node
+        query_idx = current_query_node
+        current_query_node += 1
+        
+        # Add a query node for this iteration
+        G.add_node(query_idx)
         
         distances = all_distances[i].cpu().numpy().flatten()
         indices = all_indices[i].cpu().numpy().flatten()
 
+        # Add edges from query node to its k_neighbors
         for j in range(k_neighbors):
-            G_copy.add_edge(len(G_copy.nodes) - 1, indices[j], weight=distances[j])
+            G.add_edge(query_idx, indices[j], weight=distances[j])
 
-        # find the shortest path
-        # shortest_path = nx.single_source_dijkstra_path_length(G=G_copy, source=query_idx, cutoff=1, weight=weight)
-        shortest_path = dijkstra_shortest_path(G=G_copy, query_idx=query_idx, top_k=top_k)
+        # Compute shortest path
+        shortest_path = dijkstra_shortest_path(G=G, query_idx=query_idx, top_k=top_k)
+        # Remove the query node and associated edges after computation
+        # Removing the node will also remove any edges associated with it.
+        G.remove_node(query_idx)
 
-        # pop the query node
-        shortest_path.pop(query_idx)
-        
-        sorted_shortest_path = {k_: v_ for k_, v_ in sorted(shortest_path.items(), key=lambda item: item[1])}
+        # Remove query_idx from the path results
+        if query_idx in shortest_path:
+            shortest_path.pop(query_idx)
 
-        indices = list(sorted_shortest_path.keys())[:top_k] 
-        indices_set.append(indices)
+        # Sort results by distance
+        sorted_shortest_path = {
+            k_: v_ for k_, v_ in sorted(shortest_path.items(), key=lambda item: item[1])
+        }
+
+        retrieved_indices = list(sorted_shortest_path.keys())[:top_k]
+        indices_set.append(retrieved_indices)
     
     return np.array(indices_set)
-
 
 def retrieve_k_manifold_baseline_reciprocal(G: nx.Graph, query_embeddings: np.ndarray, passage_embeddings: np.ndarray, k_neighbors: int=3, weight=1, top_k: int=100, N: int=10) -> np.ndarray:
     """
