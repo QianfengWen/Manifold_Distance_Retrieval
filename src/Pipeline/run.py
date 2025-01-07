@@ -7,7 +7,7 @@ from src.Evaluation.evaluation import recall_k, precision_k, mean_average_precis
 from src.Pipeline.basic_pipeline import Pipeline
 
 if __name__ == "__main__":
-    experiment_name = "Scidocs, manifold, graph_type=knn, distance=spectral, mode=connectivity, n_components=500"
+    experiment_name = "Scidocs, manifold, graph_type=knn, distance=l2, mode=connectivity, n_components=500"
     pipeline_kwargs = {
         "dataloader": Scidocs(),
         # "model_name": "sentence-transformers/msmarco-distilbert-base-tas-b",
@@ -16,11 +16,10 @@ if __name__ == "__main__":
         "experiment_type": "manifold",
         
         "create_new_graph": True,
-        "graph_path": "data/scidocs/graph_root_6_spectral_connectivity_500.json",
+        "graph_path": "data/scidocs/graph_root_6.json",
         "graph_type": "knn",
-        "distance": "spectral",
+        "distance": "l2",
         "mode": "connectivity",
-        "n_components": 500,
         "k_neighbours": 6,
         
         "evaluation_functions": [recall_k, precision_k, mean_average_precision_k],
