@@ -1,35 +1,67 @@
 import networkx as nx
+from sklearn.neighbors import kneighbors_graph
+from sklearn.preprocessing import normalize
+import numpy as np
+from scipy.linalg import eigh
 from tqdm import tqdm
-import torch
 import json
 
-def construct_graph(passages_embeddings, k, file_path):
-    # search for the nearest neighbors
-    doc_nearest_neighbors_indices, doc_nearest_neighbors_distances = nearest_neighbors(passages_embeddings, k)
+# assert mode in ["connectivity", "distance"], "mode must be either 'connectivity' or 'distance'"
+# assert distance in ["l2", "spectral"], "distance must be either 'l2' or 'spectral'"
+# assert isinstance(n_components, int) if distance == "spectral" else n_components is None, "n_components must be an integer if distance is 'spectral' or None if distance is 'l2'"
 
-    # create a graph
-    G = nx.Graph()
-    for i in range(len(passages_embeddings)):
-        for j in range(k):
-            G.add_edge(i, doc_nearest_neighbors_indices[i][j], weight=doc_nearest_neighbors_distances[i][j]) # add an weighted edge that connects i-th query (i) and its j-th nearest neighbor passage, the weight is the distance between them
-    # save the graph
-    save_graph(G, file_path)
-    return G
+def construct_knn_graph(passages_embeddings, file_path, k, distance="l2", mode="connectivity", n_components=None):
+    """
+    Constructs a weighted graph based on k-nearest neighbors and returns a NetworkX graph.
+    """
+    embeddings = create_spectral_embedding(passages_embeddings, k, n_components) if distance == "spectral" else passages_embeddings
+    adjacency_matrix = kneighbors_graph(embeddings, n_neighbors=k, mode=mode, include_self=False)
+    graph = nx.from_scipy_sparse_array(adjacency_matrix)
+
+    save_graph(graph, file_path)
+    return graph
 
 
-def construct_graph_reciprocal(passages_embeddings, k, file_path):
-    # search for the nearest neighbors
-    doc_nearest_neighbors_indices, doc_nearest_neighbors_distances = nearest_neighbors(passages_embeddings, k)
+def construct_connected_graph(passages_embeddings, file_path, k=100, max_edges=None, max_percentage=None, distance="l2", mode="connectivity", n_components=None):
+    """
+    Constructs a connected graph with optional limits on the number of edges.
+    """
+    # prevent size being too large
+    embeddings = create_spectral_embedding(passages_embeddings, k, n_components) if distance == "spectral" else passages_embeddings
+    adjacency_matrix = kneighbors_graph(
+        embeddings, n_neighbors=k, mode='distance', include_self=False
+    )
+    graph = nx.from_scipy_sparse_array(adjacency_matrix)
 
-    # create a graph
-    G = nx.Graph()
-    for i in range(len(passages_embeddings)):
-        for j in range(k):
-            if i in doc_nearest_neighbors_indices[doc_nearest_neighbors_indices[i][j]]:
-                G.add_edge(i, doc_nearest_neighbors_indices[i][j], weight=doc_nearest_neighbors_distances[i][j]) # add an weighted edge that connects i-th query (i) and its j-th nearest neighbor passage, the weight is the distance between them
-    # save the graph
-    save_graph(G, file_path)
-    return G
+
+    # Step 1: Sort edges by weight
+    edges = [(u, v, graph[u][v]['weight']) for u, v in graph.edges()]
+    edges.sort(key=lambda x: x[2])  
+    num_nodes = len(passages_embeddings)
+
+    # Step 2: Initialize graph and set limits
+    num_nodes = len(passages_embeddings)
+    connected_graph = nx.Graph()
+    connected_graph.add_nodes_from(range(num_nodes))
+    total_possible_edges = num_nodes * (num_nodes - 1) // 2
+    max_edges_limit = max_edges or total_possible_edges
+    max_edges_limit = min(max_edges_limit, int(max_percentage * total_possible_edges) if max_percentage else max_edges_limit)
+
+    # Step 3: Add edges until limits are reached
+    for u, v, weight in edges:
+        weight = weight if mode == 'distance' else 1
+        connected_graph.add_edge(u, v, weight=weight)  
+
+        if nx.is_connected(connected_graph):
+            break
+
+        if connected_graph.number_of_edges() >= max_edges_limit:
+            break
+
+    if file_path:
+        save_graph(connected_graph, file_path)
+
+    return connected_graph
 
 
 def save_graph(G, file_path):
@@ -52,6 +84,7 @@ def save_graph(G, file_path):
 
     return G_New
 
+
 def read_graph(file_path):
     with open(file_path, 'r') as f:
         G_New = json.load(f)
@@ -62,28 +95,93 @@ def read_graph(file_path):
     return G
 
 
-def nearest_neighbors(passages_embeddings, k):
-    doc_nearest_neighbors_indices = []
-    doc_nearest_neighbors_distances = []
 
-    # convert passages_embeddings to torch tensor
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device} for constructing graph")
-    passages_embeddings = torch.tensor(passages_embeddings, device=device)
+# helper for spectral embedding
+def create_spectral_embedding(embeddings, k, n_components, normalized=True):
+    """
+    Creates spectral embeddings from input embeddings by constructing a k-nearest neighbor graph,
+    """
+    def construct_similarity_graph(embeddings, k):
+        """
+        Constructs a k-nearest neighbor similarity graph from input embeddings.
+        """
+        adjacency_matrix = kneighbors_graph(
+            embeddings,
+            n_neighbors=k,
+            mode='connectivity',
+            include_self=False,
+            metric='euclidean'
+        )
+        return adjacency_matrix.toarray()
 
-    for idx, d in tqdm(enumerate(passages_embeddings), desc="Searching nearest neighbors"):
+    def compute_laplacian(adjacency_matrix, normalized):
+        """
+        Computes the Laplacian matrix from an adjacency matrix.
+        """
+        degree_matrix = np.diag(adjacency_matrix.sum(axis=1))
+        if normalized:
+            with np.errstate(divide='ignore'):
+                d_inv_sqrt = np.diag(1.0 / np.sqrt(degree_matrix.diagonal()))
+                d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0 
+            laplacian = np.identity(adjacency_matrix.shape[0]) - d_inv_sqrt @ adjacency_matrix @ d_inv_sqrt
+        else:
+            laplacian = degree_matrix - adjacency_matrix
+        return laplacian
 
-        l2_distance_matrix = torch.cdist(d.reshape(1, -1), passages_embeddings, p=2)
-        distances, indices = torch.topk(l2_distance_matrix, k + 1, dim=1, largest=False, sorted=True)
+    def compute_spectral_embedding(laplacian, n_components):
+        """
+        Computes spectral embeddings from the Laplacian matrix.
+        """
+        _, eigenvectors = eigh(laplacian)
 
-        # skip the search embedding itself
-        self_index = torch.where(indices == idx)[1][0]
+        embedding = eigenvectors[:, 1:n_components+1]
+        return normalize(embedding, norm='l2', axis=1)
 
-        # skip self_index
-        indices = torch.cat((indices[0][0:self_index], indices[0][self_index+1:])).cpu().numpy().flatten()
-        distances = torch.cat((distances[0][0:self_index], distances[0][self_index+1:])).cpu().numpy().flatten()
+    adjacency_matrix = construct_similarity_graph(embeddings, k)
+    laplacian = compute_laplacian(adjacency_matrix, normalized)
+    spectral_embeddings = compute_spectral_embedding(laplacian, n_components)
 
-        doc_nearest_neighbors_indices.append(indices)
-        doc_nearest_neighbors_distances.append(distances)
+    return spectral_embeddings
+
+
+# def nearest_neighbors(passages_embeddings, k):
+#     doc_nearest_neighbors_indices = []
+#     doc_nearest_neighbors_distances = []
+
+#     # convert passages_embeddings to torch tensor
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     print(f"Using device: {device} for constructing graph")
+#     passages_embeddings = torch.tensor(passages_embeddings, device=device)
+
+#     for idx, d in tqdm(enumerate(passages_embeddings), desc="Searching nearest neighbors"):
+
+#         l2_distance_matrix = torch.cdist(d.reshape(1, -1), passages_embeddings, p=2)
+#         distances, indices = torch.topk(l2_distance_matrix, k + 1, dim=1, largest=False, sorted=True)
+
+#         # skip the search embedding itself
+#         self_index = torch.where(indices == idx)[1][0]
+
+#         # skip self_index
+#         indices = torch.cat((indices[0][0:self_index], indices[0][self_index+1:])).cpu().numpy().flatten()
+#         distances = torch.cat((distances[0][0:self_index], distances[0][self_index+1:])).cpu().numpy().flatten()
+
+#         doc_nearest_neighbors_indices.append(indices)
+#         doc_nearest_neighbors_distances.append(distances)
     
-    return doc_nearest_neighbors_indices, doc_nearest_neighbors_distances
+#     return doc_nearest_neighbors_indices, doc_nearest_neighbors_distances
+
+
+
+# def construct_graph_reciprocal(passages_embeddings, k, file_path):
+#     # search for the nearest neighbors
+#     doc_nearest_neighbors_indices, doc_nearest_neighbors_distances = nearest_neighbors(passages_embeddings, k)
+
+#     # create a graph
+#     G = nx.Graph()
+#     for i in range(len(passages_embeddings)):
+#         for j in range(k):
+#             if i in doc_nearest_neighbors_indices[doc_nearest_neighbors_indices[i][j]]:
+#                 G.add_edge(i, doc_nearest_neighbors_indices[i][j], weight=doc_nearest_neighbors_distances[i][j]) # add an weighted edge that connects i-th query (i) and its j-th nearest neighbor passage, the weight is the distance between them
+#     # save the graph
+#     save_graph(G, file_path)
+#     return G
