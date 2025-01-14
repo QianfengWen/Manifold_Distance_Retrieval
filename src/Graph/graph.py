@@ -12,19 +12,19 @@ import pdb
 # assert mode in ["connectivity", "distance"], "mode must be either 'connectivity' or 'distance'", # connectivity == unweighted, distance == weighted
 # assert isinstance(n_components, int) if distance == "spectral" else n_components is None, "n_components must be an integer if distance is 'spectral' or None if distance is 'l2'"
 
-def construct_graph(passage_embeddings, file_path, k=100, graph_type="knn", distance="l2", mode="connectivity", n_components=None, max_edges=None, max_percentage=None):
+def construct_graph(passage_embeddings, file_path, k=100, graph_type="knn", distance="l2", n_components=None, max_edges=None, max_percentage=None):
     """
     Constructs a graph based on k-nearest neighbors and returns a NetworkX graph.
     """
     assert graph_type in ["knn", "connected"], "graph must be either 'knn' or 'connected'"
     assert distance in ["l2", "spectral"], "distance must be either 'l2' or 'spectral'"
-    assert mode in ["connectivity", "distance"], "mode must be either 'connectivity' or 'distance'" # connectivity == unweighted, distance == weighted
+    # assert mode in ["connectivity", "distance"], "mode must be either 'connectivity' or 'distance'" # connectivity == unweighted, distance == weighted
     assert isinstance(n_components, int) if distance == "spectral" else n_components is None, "n_components must be an integer if distance is 'spectral' or None if distance is 'l2'"
     
     if graph_type == "knn":
-        return construct_knn_graph(passage_embeddings, file_path, k, distance, mode, n_components)
+        return construct_knn_graph(passage_embeddings, file_path, k, distance, "distance", n_components)
     elif graph_type == "connected":
-        return construct_connected_graph(passage_embeddings, file_path, k, max_edges, max_percentage, distance, mode, n_components)
+        return construct_connected_graph(passage_embeddings, file_path, k, max_edges, max_percentage, distance, "distance", n_components)
     else:
         raise ValueError(f"Invalid graph type: {graph_type}")
 

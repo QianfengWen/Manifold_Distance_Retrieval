@@ -38,5 +38,6 @@ def load_embeddings(query_embeddings_path, passage_embeddings_path):
     with open(passage_embeddings_path, "rb") as f:
         passage_embeddings = pickle.load(f)
         assert isinstance(passage_embeddings, np.ndarray), "passage_embeddings should be a numpy array"
-
+    
+    # passage_embeddings = passage_embeddings[:100]
     return query_embeddings, passage_embeddings

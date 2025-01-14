@@ -52,7 +52,7 @@ class Pipeline:
             query_embeddings, passage_embeddings = self.handle_embeddings(self.model_name, self.query_embeddings_path, self.passage_embeddings_path, question_texts, passage_texts)
             
             print("********************* Handling Graph *********************")
-            G = self.handle_graph(passage_embeddings, self.k_neighbours, self.graph_path, self.graph_type, self.distance, self.mode, self.n_components, self.max_edges, self.max_percentage)
+            G = self.handle_graph(passage_embeddings, self.k_neighbours, self.graph_path, self.graph_type, self.distance, self.n_components, self.max_edges, self.max_percentage)
             
             print("********************* Running Evaluation *********************")
             self.run_evaluation(self.experiment_type, self.k_list, self.evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, G, self.k_neighbours, self.distance)
@@ -74,9 +74,9 @@ class Pipeline:
             return load_embeddings(query_embeddings_path, passage_embeddings_path)
     
 
-    def handle_graph(self, passage_embeddings, k_neighbours, graph_path, graph_type, distance, mode, n_components, max_edges, max_percentage):
+    def handle_graph(self, passage_embeddings, k_neighbours, graph_path, graph_type, distance, n_components, max_edges, max_percentage):
         if self.create_new_graph:
-            G = construct_graph(passage_embeddings, k_neighbours, graph_path, graph_type, distance, mode, n_components, max_edges, max_percentage)
+            G = construct_graph(passage_embeddings, k_neighbours, graph_path, graph_type, distance, n_components, max_edges, max_percentage)
 
         else:
             G = read_graph(graph_path)
@@ -89,9 +89,12 @@ class Pipeline:
             retrieve_results = retrieve_k(query_embeddings, distance, passage_embeddings, max(k_list))
         
         elif experiment_type == "manifold":
-            retrieve_results = retrieve_k_manifold_baseline(G, query_embeddings, passage_embeddings, k_neighbours, max(k_list))
+            if self.mode == "connectivity":
+                retrieve_results = retrieve_k_manifold_baseline(G, query_embeddings, passage_embeddings, k_neighbours, max(k_list), False)
+            elif self.mode == "distance":
+                retrieve_results = retrieve_k_manifold_baseline(G, query_embeddings, passage_embeddings, k_neighbours, max(k_list), True)
 
-        retrieval_path = os.path.join(self.experiment_path, "retrieval_results.pkl")
+        retrieval_path = os.path.join(self.experiment_path, f"{experiment_type}_retrieval_results.pkl")
         with open(retrieval_path, "bw") as f:
             pickle.dump(retrieve_results, f)
 
@@ -100,7 +103,7 @@ class Pipeline:
             for k in k_list:
                 results[evaluation_function.__name__][k] = evaluate(question_ids, passage_ids, retrieve_results, relevance_map, evaluation_function, k)
         
-        result_path = os.path.join(self.experiment_path, "evaluation_results.json")
+        result_path = os.path.join(self.experiment_path, f"{experiment_type}_evaluation_results.json")
         with open(result_path, "w") as f:
             json.dump(results, f, indent=4)
 
