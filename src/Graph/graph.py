@@ -128,24 +128,61 @@ def construct_similarity_graph(embeddings, k):
     )
     return adjacency_matrix.toarray()
 
-def compute_laplacian(adjacency_matrix, normalized):
+# def compute_laplacian(adjacency_matrix, normalized):
+#     """
+#     Computes the Laplacian matrix from an adjacency matrix.
+#     """
+#     degree_matrix = np.diag(adjacency_matrix.sum(axis=1))
+#     print("Finished creating degree matrix")
+#     if normalized:
+#         with np.errstate(divide='ignore'):
+#             d_inv_sqrt = np.diag(1.0 / np.sqrt(degree_matrix.diagonal()))
+#             print("Finished creating d_inv_sqrt")
+#             d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0 
+#             print("Finished creating d_inv_sqrt")
+#         laplacian = np.identity(adjacency_matrix.shape[0]) - d_inv_sqrt @ adjacency_matrix @ d_inv_sqrt
+#         print("Finished creating laplacian matrix")
+#     else:
+#         laplacian = degree_matrix - adjacency_matrix
+#         print("Finished creating laplacian matrix")
+#     return laplacian
+
+
+def compute_laplacian(adjacency_matrix, normalized=True):
     """
-    Computes the Laplacian matrix from an adjacency matrix.
+    Computes the Laplacian matrix from an adjacency matrix using CUDA for GPU acceleration.
+    
+    Args:
+        adjacency_matrix (torch.Tensor): The adjacency matrix (should be on GPU).
+        normalized (bool): Whether to compute the normalized Laplacian.
+    
+    Returns:
+        torch.Tensor: The Laplacian matrix (on GPU).
     """
-    degree_matrix = np.diag(adjacency_matrix.sum(axis=1))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device} for computing laplacian")
+
+    adjacency_matrix = torch.tensor(adjacency_matrix, device=device)
+    
+    # Compute degree matrix
+    degree_matrix = torch.diag(torch.sum(adjacency_matrix, dim=1))
     print("Finished creating degree matrix")
+
     if normalized:
-        with np.errstate(divide='ignore'):
-            d_inv_sqrt = np.diag(1.0 / np.sqrt(degree_matrix.diagonal()))
-            print("Finished creating d_inv_sqrt")
-            d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0 
-            print("Finished creating d_inv_sqrt")
-        laplacian = np.identity(adjacency_matrix.shape[0]) - d_inv_sqrt @ adjacency_matrix @ d_inv_sqrt
+        # Compute D^(-1/2)
+        d_inv_sqrt = torch.diag(torch.pow(degree_matrix.diagonal(), -0.5))
+        d_inv_sqrt[torch.isinf(d_inv_sqrt)] = 0  # Handle infinities (divide by zero)
+        print("Finished creating d_inv_sqrt")
+        
+        # Compute normalized Laplacian
+        laplacian = torch.eye(adjacency_matrix.shape[0], device='cuda') - d_inv_sqrt @ adjacency_matrix @ d_inv_sqrt
         print("Finished creating laplacian matrix")
     else:
+        # Compute unnormalized Laplacian
         laplacian = degree_matrix - adjacency_matrix
         print("Finished creating laplacian matrix")
-    return laplacian
+    
+    return laplacian.cpu().numpy()
 
 def compute_spectral_embedding(laplacian, n_components):
     """
@@ -171,31 +208,31 @@ def create_spectral_embedding(embeddings, k, n_components, normalized=True):
     return spectral_embeddings
 
 
-def nearest_neighbors(passages_embeddings, k):
-    doc_nearest_neighbors_indices = []
-    doc_nearest_neighbors_distances = []
+# def nearest_neighbors(passages_embeddings, k):
+#     doc_nearest_neighbors_indices = []
+#     doc_nearest_neighbors_distances = []
 
-    # convert passages_embeddings to torch tensor
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device} for constructing graph")
-    passages_embeddings = torch.tensor(passages_embeddings, device=device)
+#     # convert passages_embeddings to torch tensor
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     print(f"Using device: {device} for constructing graph")
+#     passages_embeddings = torch.tensor(passages_embeddings, device=device)
 
-    for idx, d in tqdm(enumerate(passages_embeddings), desc="Searching nearest neighbors"):
+#     for idx, d in tqdm(enumerate(passages_embeddings), desc="Searching nearest neighbors"):
 
-        l2_distance_matrix = torch.cdist(d.reshape(1, -1), passages_embeddings, p=2)
-        distances, indices = torch.topk(l2_distance_matrix, k + 1, dim=1, largest=False, sorted=True)
+#         l2_distance_matrix = torch.cdist(d.reshape(1, -1), passages_embeddings, p=2)
+#         distances, indices = torch.topk(l2_distance_matrix, k + 1, dim=1, largest=False, sorted=True)
 
-        # skip the search embedding itself
-        self_index = torch.where(indices == idx)[1][0]
+#         # skip the search embedding itself
+#         self_index = torch.where(indices == idx)[1][0]
 
-        # skip self_index
-        indices = torch.cat((indices[0][0:self_index], indices[0][self_index+1:])).cpu().numpy().flatten()
-        distances = torch.cat((distances[0][0:self_index], distances[0][self_index+1:])).cpu().numpy().flatten()
+#         # skip self_index
+#         indices = torch.cat((indices[0][0:self_index], indices[0][self_index+1:])).cpu().numpy().flatten()
+#         distances = torch.cat((distances[0][0:self_index], distances[0][self_index+1:])).cpu().numpy().flatten()
 
-        doc_nearest_neighbors_indices.append(indices)
-        doc_nearest_neighbors_distances.append(distances)
+#         doc_nearest_neighbors_indices.append(indices)
+#         doc_nearest_neighbors_distances.append(distances)
     
-    return doc_nearest_neighbors_indices, doc_nearest_neighbors_distances
+#     return doc_nearest_neighbors_indices, doc_nearest_neighbors_distances
 
 
 
