@@ -20,10 +20,11 @@ if __name__ == "__main__":
             "passage_embeddings_path": f"data/{dataset_name}/tas-b-doc_embeddings.pkl",
 
             "experiment_type": "manifold",
-            "create_new_graph": False,
+            "create_new_graph": True,
             "k_neighbours": k,
             "graph_type": "knn",
-            "distance": "l2",
+            "distance": "spectral",
+            "n_components": 100,
             "mode": "connectivity",
             
             "evaluation_functions": [recall_k, precision_k, mean_average_precision_k],

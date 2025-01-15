@@ -162,36 +162,68 @@ def compute_laplacian(adjacency_matrix, normalized=True):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device} for computing laplacian")
 
-    adjacency_matrix = torch.tensor(adjacency_matrix, device=device)
+    # Process in chunks to reduce memory usage
+    chunk_size = 1000  # Adjust based on available GPU memory
+    n = adjacency_matrix.shape[0]
+    num_chunks = (n + chunk_size - 1) // chunk_size
+
+    # Initialize result arrays on CPU
+    degree_vector = np.zeros(n)
     
-    # Compute degree matrix
-    degree_matrix = torch.diag(torch.sum(adjacency_matrix, dim=1))
-    print("Finished creating degree matrix")
+    # Calculate degrees in chunks
+    for i in range(num_chunks):
+        start_idx = i * chunk_size
+        end_idx = min((i + 1) * chunk_size, n)
+        
+        chunk = torch.tensor(adjacency_matrix[start_idx:end_idx], device=device)
+        degree_vector[start_idx:end_idx] = torch.sum(chunk, dim=1).cpu().numpy()
+        del chunk  # Free GPU memory
 
     if normalized:
-        # Compute D^(-1/2)
-        d_inv_sqrt = torch.diag(torch.pow(degree_matrix.diagonal(), -0.5))
-        d_inv_sqrt[torch.isinf(d_inv_sqrt)] = 0  # Handle infinities (divide by zero)
+        # Compute D^(-1/2) on CPU
+        d_inv_sqrt = np.diag(1.0 / np.sqrt(degree_vector))
+        d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0
+        d_inv_sqrt = torch.tensor(d_inv_sqrt, device=device)
         print("Finished creating d_inv_sqrt")
         
-        # Compute normalized Laplacian
-        laplacian = torch.eye(adjacency_matrix.shape[0], device='cuda') - d_inv_sqrt @ adjacency_matrix @ d_inv_sqrt
+        # Initialize laplacian on CPU
+        laplacian = np.eye(n)
+        
+        # Compute normalized Laplacian in chunks
+        for i in tqdm(range(num_chunks), desc="Computing normalized Laplacian"):
+            start_idx = i * chunk_size
+            end_idx = min((i + 1) * chunk_size, n)
+            
+            chunk = torch.tensor(adjacency_matrix[start_idx:end_idx], device=device)
+            # Fix: Correct matrix multiplication order and slicing
+            result_chunk = torch.mm(
+                torch.mm(d_inv_sqrt[start_idx:end_idx, start_idx:end_idx], chunk),
+                d_inv_sqrt
+            ).cpu().numpy()
+            laplacian[start_idx:end_idx] -= result_chunk
+            del chunk, result_chunk  # Free GPU memory
+            
         print("Finished creating laplacian matrix")
+        
     else:
-        # Compute unnormalized Laplacian
-        laplacian = degree_matrix - adjacency_matrix
+        # Compute unnormalized Laplacian on CPU
+        laplacian = np.diag(degree_vector) - adjacency_matrix
         print("Finished creating laplacian matrix")
     
-    return laplacian.cpu().numpy()
+    return laplacian
 
 def compute_spectral_embedding(laplacian, n_components):
     """
     Computes spectral embeddings from the Laplacian matrix.
     """
-    _, eigenvectors = eigh(laplacian)
-
-    embedding = eigenvectors[:, 1:n_components+1]
-    return normalize(embedding, norm='l2', axis=1)
+    # Convert to numpy for eigenvalue computation
+    # We only need the first n_components+1 eigenvalues/vectors
+    eigenvalues, eigenvectors = eigh(laplacian, eigvals=(1, n_components))
+    
+    # Normalize the eigenvectors
+    embeddings = normalize(eigenvectors, norm='l2', axis=1)
+    
+    return embeddings
 
 def create_spectral_embedding(embeddings, k, n_components, normalized=True):
     """
