@@ -5,7 +5,8 @@ import networkx as nx
 from tqdm import tqdm
 import torch
 import matplotlib.pyplot as plt
-import pdb
+# should do "pip install SciencePlots"
+import scienceplots
 from heapq import heappush, heappop
 import seaborn as sns
 
@@ -94,7 +95,7 @@ def dijkstra_shortest_path(G: nx.Graph, query_idx: int, top_k: int=100) -> dict:
 
 
 if __name__ == "__main__":
-    dataset = "scidoc"
+    dataset = "NFCorpus"
     k = 10
     query_embeddings_path = f"data/{dataset}/tas-b-query_embeddings.pkl"
     passage_embeddings_path = f"data/{dataset}/tas-b-doc_embeddings.pkl"
@@ -149,35 +150,49 @@ if __name__ == "__main__":
     with open(f"data/{dataset}/l2_distances.pkl", "rb") as f:
         l2_distances = pickle.load(f)
     with open(f"data/{dataset}/manifold_distances.pkl", "rb") as f:
-        manifold_distances = pickle.load(f) 
+        manifold_distances = pickle.load(f)
 
-    # Apply Seaborn style for a modern aesthetic
-    sns.set(style='whitegrid', font_scale=1.2, palette='muted')
+    # random sample 5000 data points
+    sample_idx = np.random.choice(len(l2_distances), 5000, replace=False)
+    l2_distances = np.array(l2_distances)[sample_idx]
+    manifold_distances = np.array(manifold_distances)[sample_idx]
 
-    plt.rcParams['font.family'] = 'Times New Roman'
-
-    # Create the scatter plot
-    plt.figure(figsize=(8, 6))
-
-    # Add the 45-degree line
-    min_val = min(min(l2_distances), min(manifold_distances))
-    max_val = max(max(l2_distances), max(manifold_distances))
-    plt.plot([min_val, max_val], [min_val, max_val], color='darkred', linestyle='--', linewidth=2, label='Identity line', zorder=1)
-
-    plt.scatter(l2_distances, manifold_distances, alpha=0.7, s=15, edgecolors='k', color='royalblue', label='Data Points', zorder=2)
-
-    # Titles and labels with professional formatting
-    plt.title(f'Relationship between L2 Distance and Manifold Distance - {dataset}', fontsize=16, fontweight='bold')
-    plt.xlabel('L2 Distance', fontsize=14)
-    plt.ylabel('Manifold Distance', fontsize=14)
-
-    # Add a grid with minor ticks
-    plt.grid(True, which='both', linestyle=':', linewidth=0.6)
-
-    # Legend customization
-    plt.legend(fontsize=12, loc='upper left')
-
-    # Show the plot
-    plt.tight_layout()
-    plt.show()
+    
+    with plt.style.context(['science', 'scatter', 'no-latex']):     
+        fig, ax = plt.subplots()
+        
+        # Plot identity line with better styling
+        min_val = min(min(l2_distances), min(manifold_distances))
+        max_val = max(max(l2_distances), max(manifold_distances))
+        ax.plot([min_val, max_val], [min_val, max_val], 
+                'k--', label='45 degree line', linewidth=1, zorder=2, color='#E5306E')
+        
+        # Plot data points with better visibility
+        ax.scatter(l2_distances, manifold_distances, 
+                    s=0.1,  # tiny point size
+                    alpha=0.6,  # medium transparency
+                    color='#39AF84',  # Professional blue color
+                    label='Data points',
+                    zorder=3)
+        
+        ax.tick_params(axis='both', which='major', labelsize=6)
+        # do not show ticks
+        ax.set_xticks([10, 20, 30, 40, 50])
+        ax.set_yticks([10, 20, 30, 40, 50])
+        
+        # Improve legend
+        ax.legend(fontsize=8)
+        
+        # Improve labels
+        ax.set_xlabel('Euclidean Distance', fontsize=8)
+        ax.set_ylabel('Manifold Distance', fontsize=8)
+        ax.set_title(f'Comparison of Euclidean and Manifold Distances on {dataset}', fontsize=8, fontweight='bold')
+        
+        # Set limits and adjust ticks
+        ax.set_xlim([min_val, max_val])
+        ax.set_ylim([min_val, max_val])
+        
+        ax.autoscale(tight=True)
+        fig.savefig(f'{dataset}_distances.pdf')
+        fig.savefig(f'{dataset}_distances.jpg', dpi=300)
 

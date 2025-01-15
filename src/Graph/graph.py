@@ -6,6 +6,9 @@ from scipy.linalg import eigh
 from tqdm import tqdm
 import json
 import pdb
+import torch
+from networkx.readwrite import json_graph
+import pickle
 
 # knn graph vs. connected graph
 # assert distance in ["l2", "spectral"], "distance must be either 'l2' or 'spectral'"
@@ -88,33 +91,26 @@ def construct_connected_graph(passages_embeddings, file_path, k=100, max_edges=N
 
 
 def save_graph(G, file_path):
-    G_New = {}
-    for edge in tqdm(G.edges(data=True), desc="Saving graph"):
-        weight = str(edge[2]['weight'])
-        node1 = str(edge[0])
-        node2 = str(edge[1])  
-        try:
-            G_New[node1].update({node2: weight})
-        except KeyError:
-            G_New[node1] = {node2: weight}
-        try:
-            G_New[node2].update({node1: weight})
-        except KeyError:
-            G_New[node2] = {node1: weight}
+    # # save the graph as a json file
+    # G_New = json_graph.node_link_data(G)
+    # with open(file_path, 'w') as f:
+    #     json.dump(dict(G_New), f, indent=4)
+    # return G_New
 
-    with open(file_path, 'w') as f:
-        json.dump(G_New, f, indent=4)
-
-    return G_New
+    # save the graph as a pickle file
+    with open(file_path, 'wb') as f:
+        pickle.dump(G, f)
+    return
 
 
 def read_graph(file_path):
-    with open(file_path, 'r') as f:
-        G_New = json.load(f)
-    G = nx.Graph()
-    for node in G_New:
-        for neighbor, weight in G_New[node].items():
-            G.add_edge(int(node), int(neighbor), weight=float(weight))
+    # # read the graph using networkx
+    # G = json_graph.node_link_graph(json.load(open(file_path, 'r')))
+    # return G
+
+    # read the graph as a adjacency matrix
+    with open(file_path, 'rb') as f:
+        G = pickle.load(f)
     return G
 
 
@@ -175,31 +171,31 @@ def create_spectral_embedding(embeddings, k, n_components, normalized=True):
     return spectral_embeddings
 
 
-# def nearest_neighbors(passages_embeddings, k):
-#     doc_nearest_neighbors_indices = []
-#     doc_nearest_neighbors_distances = []
+def nearest_neighbors(passages_embeddings, k):
+    doc_nearest_neighbors_indices = []
+    doc_nearest_neighbors_distances = []
 
-#     # convert passages_embeddings to torch tensor
-#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#     print(f"Using device: {device} for constructing graph")
-#     passages_embeddings = torch.tensor(passages_embeddings, device=device)
+    # convert passages_embeddings to torch tensor
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device} for constructing graph")
+    passages_embeddings = torch.tensor(passages_embeddings, device=device)
 
-#     for idx, d in tqdm(enumerate(passages_embeddings), desc="Searching nearest neighbors"):
+    for idx, d in tqdm(enumerate(passages_embeddings), desc="Searching nearest neighbors"):
 
-#         l2_distance_matrix = torch.cdist(d.reshape(1, -1), passages_embeddings, p=2)
-#         distances, indices = torch.topk(l2_distance_matrix, k + 1, dim=1, largest=False, sorted=True)
+        l2_distance_matrix = torch.cdist(d.reshape(1, -1), passages_embeddings, p=2)
+        distances, indices = torch.topk(l2_distance_matrix, k + 1, dim=1, largest=False, sorted=True)
 
-#         # skip the search embedding itself
-#         self_index = torch.where(indices == idx)[1][0]
+        # skip the search embedding itself
+        self_index = torch.where(indices == idx)[1][0]
 
-#         # skip self_index
-#         indices = torch.cat((indices[0][0:self_index], indices[0][self_index+1:])).cpu().numpy().flatten()
-#         distances = torch.cat((distances[0][0:self_index], distances[0][self_index+1:])).cpu().numpy().flatten()
+        # skip self_index
+        indices = torch.cat((indices[0][0:self_index], indices[0][self_index+1:])).cpu().numpy().flatten()
+        distances = torch.cat((distances[0][0:self_index], distances[0][self_index+1:])).cpu().numpy().flatten()
 
-#         doc_nearest_neighbors_indices.append(indices)
-#         doc_nearest_neighbors_distances.append(distances)
+        doc_nearest_neighbors_indices.append(indices)
+        doc_nearest_neighbors_distances.append(distances)
     
-#     return doc_nearest_neighbors_indices, doc_nearest_neighbors_distances
+    return doc_nearest_neighbors_indices, doc_nearest_neighbors_distances
 
 
 

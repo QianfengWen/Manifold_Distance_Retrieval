@@ -20,7 +20,7 @@ if __name__ == "__main__":
             "passage_embeddings_path": f"data/{dataset_name}/tas-b-doc_embeddings.pkl",
 
             "experiment_type": "manifold",
-            "create_new_graph": True,
+            "create_new_graph": False,
             "k_neighbours": k,
             "graph_type": "knn",
             "distance": "l2",
@@ -30,10 +30,10 @@ if __name__ == "__main__":
             "k_list": [1, 3, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
         }
         if pipeline_kwargs["distance"] == "spectral":
-            pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['graph_type']}_{pipeline_kwargs['distance']}_n_components={pipeline_kwargs['n_components']}.json"
+            pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['graph_type']}_{pipeline_kwargs['distance']}_n_components={pipeline_kwargs['n_components']}.pkl"
             experiment_name = f"{dataset_name}/k={pipeline_kwargs['k_neighbours']}___graph_type={pipeline_kwargs['graph_type']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}__n_components={pipeline_kwargs['n_components']}"
         else:    
-            pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['graph_type']}_{pipeline_kwargs['distance']}.json"
+            pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['graph_type']}_{pipeline_kwargs['distance']}.pkl"
             experiment_name = f"{dataset_name}/k={pipeline_kwargs['k_neighbours']}___graph_type={pipeline_kwargs['graph_type']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}"
 
         pipeline = Pipeline(experiment_name, **pipeline_kwargs)

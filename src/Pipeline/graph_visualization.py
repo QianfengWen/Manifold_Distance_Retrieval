@@ -83,25 +83,25 @@ if __name__ == "__main__":
 
    
 
-    # only keep 50 nodes near Q
-    G = nx.subgraph(G, dijkstra_shortest_path(G=G, query_idx='Q', top_k=50))
+    # only keep 10 nodes near Q
+    G = nx.subgraph(G, dijkstra_shortest_path(G=G, query_idx='Q', top_k=11))
     # for weight only keep 3 digits after the decimal point
     edge_labels=dict([((u,v,),round(d['weight'], 3)) for u,v,d in G.edges(data=True)])
 
-    pos = nx.spring_layout(G)
-   
-    # Draw edges first
-    nx.draw_networkx_edges(G, pos, width=0.2)
+    # Adjust spring_layout parameters for tighter clustering and shorter edges
+    pos = nx.spring_layout(G, k=0.1, iterations=1000)  # even smaller k value
     
-    # Draw regular nodes
+    # Draw edges first with increased width
+    nx.draw_networkx_edges(G, pos, width=0.5)  # increased edge width
+    
+    # Draw regular nodes with larger size
     regular_nodes = [node for node in G.nodes() if node != 'Q']
     nx.draw_networkx_nodes(G, pos, nodelist=regular_nodes, node_color='lightblue', 
-                            node_size=10)
+                            node_size=100)  # increased from 10 to 100
     
-    # Draw Q node as a star
+    # Draw Q node as a star with larger size
     nx.draw_networkx_nodes(G, pos, nodelist=['Q'], node_color='red', 
-                            node_size=300, node_shape='*')
-    
+                            node_size=500, node_shape='*')  # increased from 300 to 500    
     # Add labels
     nx.draw_networkx_labels(G, pos, 
                             {node: node if node == 'Q' else '' for node in G.nodes()},
