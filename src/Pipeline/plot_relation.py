@@ -103,6 +103,14 @@ if __name__ == "__main__":
 
     query_embeddings, passage_embeddings = load_embeddings(query_embeddings_path, passage_embeddings_path)
 
+    # sample 5000 passage
+    sample_passage_idx = np.random.choice(len(passage_embeddings), 5000, replace=False)
+    passage_embeddings = passage_embeddings[sample_passage_idx]
+
+    # sample_query_idx = np.random.choice(len(query_embeddings), 100, replace=False)
+    # query_embeddings = query_embeddings[sample_query_idx]
+    
+
     G = construct_graph(passage_embeddings, k)
 
     l2_distances = []

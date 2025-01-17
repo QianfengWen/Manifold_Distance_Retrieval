@@ -11,33 +11,46 @@ available_datasets = {"scidocs": Scidocs, "msmarco": Msmarco, "antique": Antique
 dataset_name = "scidocs"
 
 if __name__ == "__main__":
-    for k in range(10, 11):
-        print(f"Running experiment for k={k}")
-        pipeline_kwargs = {
-            "dataloader": available_datasets[dataset_name](),
-            # "model_name": "sentence-transformers/msmarco-distilbert-base-tas-b",
-            "query_embeddings_path": f"data/{dataset_name}/tas-b-query_embeddings.pkl",
-            "passage_embeddings_path": f"data/{dataset_name}/tas-b-doc_embeddings.pkl",
+    # design choices
+    k_list = [6,10,15]
+    # graph_type_list = ["knn", "connected"]
+    graph_type_list = ["knn"]
+    # distance_type_list = ["l2", "spectral"]
+    distance_type_list = ["spectral"]
+    n_components_list = [100, 300, 500, 700]
+    # mode_list = ["connectivity", "distance"]
+    mode_list = ["connectivity"]
+    for k in k_list:
+        for graph_type in graph_type_list:
+            for distance_type in distance_type_list:
+                for mode in mode_list:  
+                    for n_components in n_components_list:
+                        print(f"Running experiment for k={k}, graph_type={graph_type}, distance_type={distance_type}, mode={mode}, n_components={n_components}")
+                        pipeline_kwargs = {
+                            "dataloader": available_datasets[dataset_name](),
+                            # "model_name": "sentence-transformers/msmarco-distilbert-base-tas-b",
+                            "query_embeddings_path": f"data/{dataset_name}/tas-b-query_embeddings.pkl",
+                            "passage_embeddings_path": f"data/{dataset_name}/tas-b-doc_embeddings.pkl",
 
-            "experiment_type": "manifold",
-            "create_new_graph": True,
-            "k_neighbours": k,
-            "graph_type": "knn",
-            "distance": "spectral",
-            "n_components": 100,
-            "mode": "connectivity",
-            
-            "evaluation_functions": [recall_k, precision_k, mean_average_precision_k],
-            "k_list": [1, 3, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-        }
-        if pipeline_kwargs["distance"] == "spectral":
-            pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['graph_type']}_{pipeline_kwargs['distance']}_n_components={pipeline_kwargs['n_components']}.pkl"
-            experiment_name = f"{dataset_name}/k={pipeline_kwargs['k_neighbours']}___graph_type={pipeline_kwargs['graph_type']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}__n_components={pipeline_kwargs['n_components']}"
-        else:    
-            pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['graph_type']}_{pipeline_kwargs['distance']}.pkl"
-            experiment_name = f"{dataset_name}/k={pipeline_kwargs['k_neighbours']}___graph_type={pipeline_kwargs['graph_type']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}"
+                            "experiment_type": "manifold",
+                            "create_new_graph": True,
+                            "k_neighbours": k,
+                            "graph_type": graph_type,
+                            "distance": distance_type,
+                            "mode": mode,
+                            "n_components": n_components,
 
-        pipeline = Pipeline(experiment_name, **pipeline_kwargs)
-        pipeline.run_pipeline()
-    # pipeline.run_evaluation_with_cache()
+                            "evaluation_functions": [recall_k, precision_k, mean_average_precision_k],
+                            "k_list": [1, 3, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+                        }
+                        if pipeline_kwargs["distance"] == "spectral":
+                            pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['graph_type']}_{pipeline_kwargs['distance']}_n_components={pipeline_kwargs['n_components']}.pkl"
+                            experiment_name = f"{dataset_name}/k={pipeline_kwargs['k_neighbours']}___graph_type={pipeline_kwargs['graph_type']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}__n_components={pipeline_kwargs['n_components']}"
+                        else:    
+                            pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['graph_type']}_{pipeline_kwargs['distance']}.pkl"
+                            experiment_name = f"{dataset_name}/k={pipeline_kwargs['k_neighbours']}___graph_type={pipeline_kwargs['graph_type']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}"
+
+                        pipeline = Pipeline(experiment_name, **pipeline_kwargs)
+                        pipeline.run_pipeline()
+        # pipeline.run_evaluation_with_cache()
 
