@@ -6,6 +6,7 @@ from src.Dataset.nfcorpus import NFCorpus
 from src.Dataset.antique import Antique
 from src.Evaluation.evaluation import recall_k, precision_k, mean_average_precision_k
 from src.Pipeline.basic_pipeline import Pipeline
+import time
 
 available_datasets = {"scidocs": Scidocs, "msmarco": MSMARCO, "antique": Antique, "nfcorpus": NFCorpus}
 dataset_name = "nfcorpus"
@@ -16,7 +17,7 @@ if __name__ == "__main__":
     # graph_type_list = ["knn", "connected"]
     graph_type_list = ["knn"]
     distance_type_list = ["spectral"]
-    n_components_list = [700]
+    n_components_list = [100, 300, 500, 700]
     mode_list = ["connectivity", "distance"]
     for k in k_list:
         for graph_type in graph_type_list:
@@ -24,7 +25,7 @@ if __name__ == "__main__":
                 for mode in mode_list:  
                     if distance_type == "spectral":
                         for n_components in n_components_list:
-                            print(f"Running experiment for k={k}, graph_type={graph_type}, distance_type={distance_type}, mode={mode}, n_components={n_components}")
+                            print(f"\n\nRunning experiment for k = {k}, graph_type = {graph_type}, distance_type = {distance_type}, mode = {mode}, n_components = {n_components}")
                             pipeline_kwargs = {
                                 "dataloader": available_datasets[dataset_name](),
                                 # "model_name": "sentence-transformers/msmarco-distilbert-base-tas-b",
@@ -50,9 +51,12 @@ if __name__ == "__main__":
                                 experiment_name = f"{dataset_name}/k={pipeline_kwargs['k_neighbours']}___graph_type={pipeline_kwargs['graph_type']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}"
 
                             pipeline = Pipeline(experiment_name, **pipeline_kwargs)
+                            start = time.time()
                             pipeline.run_pipeline()
+                            end = time.time()
+                            print("Finished running the experiment, it takes", end-start, "seconds")
                     else:
-                        print(f"Running experiment for k={k}, graph_type={graph_type}, distance_type={distance_type}, mode={mode}")
+                        print(f"Running experiment for k = {k}, graph_type = {graph_type}, distance_type = {distance_type}, mode = {mode}")
                         pipeline_kwargs = {
                             "dataloader": available_datasets[dataset_name](),
                             # "model_name": "sentence-transformers/msmarco-distilbert-base-tas-b",
@@ -73,6 +77,8 @@ if __name__ == "__main__":
                         experiment_name = f"{dataset_name}/k={pipeline_kwargs['k_neighbours']}___graph_type={pipeline_kwargs['graph_type']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}"
 
                         pipeline = Pipeline(experiment_name, **pipeline_kwargs)
+                        start = time.time()
                         pipeline.run_pipeline()
-        # pipeline.run_evaluation_with_cache()
+                        end = time.time()
+                        print("Finished running the experiment, it takes", end-start, "seconds")
 

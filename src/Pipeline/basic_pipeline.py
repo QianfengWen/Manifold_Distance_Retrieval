@@ -41,14 +41,14 @@ class Pipeline:
             raise
     
     def run_pipeline(self, with_cache=False):
-        print(f"********************* Running Experiments: {self.experiment_path} *********************")
+        # print(f"********************* Running Experiments: {self.experiment_path} *********************")
 
-        print("********************* Loading Data *********************")
+        # print("********************* Loading Data *********************")
         question_ids, question_texts, passage_ids, passage_texts, relevance_map = self.load_data(self.dataloader)
         
         
         if not with_cache:        
-            print("********************* Handling Embeddings *********************")
+            # print("********************* Handling Embeddings *********************")
             query_embeddings, passage_embeddings = self.handle_embeddings(self.model_name, self.query_embeddings_path, self.passage_embeddings_path, question_texts, passage_texts)
             
             print("********************* Handling Graph *********************")
@@ -76,10 +76,10 @@ class Pipeline:
 
     def handle_graph(self, passage_embeddings, k_neighbours, graph_path, graph_type, distance, n_components, max_edges, max_percentage):
         if self.create_new_graph and not os.path.exists(graph_path):
+            print("Constructing Graph ...")
             G = construct_graph(passage_embeddings, k_neighbours, graph_path, graph_type, distance, n_components, max_edges, max_percentage)
 
         else:
-            print("********************* Graph already exists. Loading graph from cache: ", graph_path)
             G = read_graph(graph_path)
         
         return G
