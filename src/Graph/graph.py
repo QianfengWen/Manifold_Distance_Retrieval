@@ -8,6 +8,7 @@ import os
 import json
 import pdb
 import torch
+from sklearn.manifold import SpectralEmbedding
 from networkx.readwrite import json_graph
 import pickle
 
@@ -115,170 +116,12 @@ def read_graph(file_path):
     return G
 
 
-# helper for spectral embedding
-def construct_similarity_graph(embeddings, k):
-    """
-    Constructs a k-nearest neighbor similarity graph from input embeddings.
-    """
-    adjacency_matrix = kneighbors_graph(
-        embeddings,
-        n_neighbors=k,
-        mode='connectivity',
-        include_self=False,
-        metric='euclidean'
-    )
-    return adjacency_matrix.toarray()
-
-# def compute_laplacian(adjacency_matrix, normalized):
-#     """
-#     Computes the Laplacian matrix from an adjacency matrix.
-#     """
-#     degree_matrix = np.diag(adjacency_matrix.sum(axis=1))
-#     print("Finished creating degree matrix")
-#     if normalized:
-#         with np.errstate(divide='ignore'):
-#             d_inv_sqrt = np.diag(1.0 / np.sqrt(degree_matrix.diagonal()))
-#             print("Finished creating d_inv_sqrt")
-#             d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0 
-#             print("Finished creating d_inv_sqrt")
-#         laplacian = np.identity(adjacency_matrix.shape[0]) - d_inv_sqrt @ adjacency_matrix @ d_inv_sqrt
-#         print("Finished creating laplacian matrix")
-#     else:
-#         laplacian = degree_matrix - adjacency_matrix
-#         print("Finished creating laplacian matrix")
-#     return laplacian
-
-
-def compute_laplacian(adjacency_matrix, normalized=True):
-    """
-    Computes the Laplacian matrix from an adjacency matrix using CUDA for GPU acceleration.
-    
-    Args:
-        adjacency_matrix (torch.Tensor): The adjacency matrix (should be on GPU).
-        normalized (bool): Whether to compute the normalized Laplacian.
-    
-    Returns:
-        torch.Tensor: The Laplacian matrix (on GPU).
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device} for computing laplacian")
-
-    # Process in chunks to reduce memory usage
-    chunk_size = 1000  # Adjust based on available GPU memory
-    n = adjacency_matrix.shape[0]
-    num_chunks = (n + chunk_size - 1) // chunk_size
-
-    # Initialize result arrays on CPU
-    degree_vector = np.zeros(n)
-    
-    # Calculate degrees in chunks
-    for i in range(num_chunks):
-        start_idx = i * chunk_size
-        end_idx = min((i + 1) * chunk_size, n)
-        
-        chunk = torch.tensor(adjacency_matrix[start_idx:end_idx], device=device)
-        degree_vector[start_idx:end_idx] = torch.sum(chunk, dim=1).cpu().numpy()
-        del chunk  # Free GPU memory
-
-    if normalized:
-        # Compute D^(-1/2) on CPU
-        d_inv_sqrt = np.diag(1.0 / np.sqrt(degree_vector))
-        d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0
-        d_inv_sqrt = torch.tensor(d_inv_sqrt, device=device)
-        print("Finished creating d_inv_sqrt")
-        
-        # Initialize laplacian on CPU
-        laplacian = np.eye(n)
-        
-        # Compute normalized Laplacian in chunks
-        for i in tqdm(range(num_chunks), desc="Computing normalized Laplacian"):
-            start_idx = i * chunk_size
-            end_idx = min((i + 1) * chunk_size, n)
-            
-            chunk = torch.tensor(adjacency_matrix[start_idx:end_idx], device=device)
-            # Fix: Correct matrix multiplication order and slicing
-            result_chunk = torch.mm(
-                torch.mm(d_inv_sqrt[start_idx:end_idx, start_idx:end_idx], chunk),
-                d_inv_sqrt
-            ).cpu().numpy()
-            laplacian[start_idx:end_idx] -= result_chunk
-            del chunk, result_chunk  # Free GPU memory
-            
-        print("Finished creating laplacian matrix")
-        
-    else:
-        # Compute unnormalized Laplacian on CPU
-        laplacian = np.diag(degree_vector) - adjacency_matrix
-        print("Finished creating laplacian matrix")
-    
-    return laplacian
-
-def compute_spectral_embedding(laplacian, n_components):
-    """
-    Computes spectral embeddings from the Laplacian matrix.
-    """
-    # Convert to numpy for eigenvalue computation
-    # We only need the first n_components+1 eigenvalues/vectors
-    eigenvalues, eigenvectors = eigh(laplacian, eigvals=(1, n_components))
-    
-    # Normalize the eigenvectors
-    embeddings = normalize(eigenvectors, norm='l2', axis=1)
-    
-    return embeddings
-
 def create_spectral_embedding(embeddings, k, n_components, normalized=True):
     """
     Creates spectral embeddings from input embeddings by constructing a k-nearest neighbor graph,
     """
 
-    adjacency_matrix = construct_similarity_graph(embeddings, k)
-    print("Finished creating similarity graph")
-    laplacian = compute_laplacian(adjacency_matrix, normalized)
-    print("Finished creating laplacian matrix")
-    spectral_embeddings = compute_spectral_embedding(laplacian, n_components)
-    print("Finished creating spectral embeddings")
-
-    return spectral_embeddings
-
-
-# def nearest_neighbors(passages_embeddings, k):
-#     doc_nearest_neighbors_indices = []
-#     doc_nearest_neighbors_distances = []
-
-#     # convert passages_embeddings to torch tensor
-#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#     print(f"Using device: {device} for constructing graph")
-#     passages_embeddings = torch.tensor(passages_embeddings, device=device)
-
-#     for idx, d in tqdm(enumerate(passages_embeddings), desc="Searching nearest neighbors"):
-
-#         l2_distance_matrix = torch.cdist(d.reshape(1, -1), passages_embeddings, p=2)
-#         distances, indices = torch.topk(l2_distance_matrix, k + 1, dim=1, largest=False, sorted=True)
-
-#         # skip the search embedding itself
-#         self_index = torch.where(indices == idx)[1][0]
-
-#         # skip self_index
-#         indices = torch.cat((indices[0][0:self_index], indices[0][self_index+1:])).cpu().numpy().flatten()
-#         distances = torch.cat((distances[0][0:self_index], distances[0][self_index+1:])).cpu().numpy().flatten()
-
-#         doc_nearest_neighbors_indices.append(indices)
-#         doc_nearest_neighbors_distances.append(distances)
-    
-#     return doc_nearest_neighbors_indices, doc_nearest_neighbors_distances
-
-
-
-# def construct_graph_reciprocal(passages_embeddings, k, file_path):
-#     # search for the nearest neighbors
-#     doc_nearest_neighbors_indices, doc_nearest_neighbors_distances = nearest_neighbors(passages_embeddings, k)
-
-#     # create a graph
-#     G = nx.Graph()
-#     for i in range(len(passages_embeddings)):
-#         for j in range(k):
-#             if i in doc_nearest_neighbors_indices[doc_nearest_neighbors_indices[i][j]]:
-#                 G.add_edge(i, doc_nearest_neighbors_indices[i][j], weight=doc_nearest_neighbors_distances[i][j]) # add an weighted edge that connects i-th query (i) and its j-th nearest neighbor passage, the weight is the distance between them
-#     # save the graph
-#     save_graph(G, file_path)
-#     return G
+    # create a spectral embedding
+    spectral_embedding = SpectralEmbedding(n_components=n_components, affinity='nearest_neighbors', n_neighbors=k, random_state=311)
+    embeddings = spectral_embedding.fit_transform(embeddings)
+    return embeddings
