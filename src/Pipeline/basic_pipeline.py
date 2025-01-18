@@ -75,10 +75,13 @@ class Pipeline:
     
 
     def handle_graph(self, passage_embeddings, k_neighbours, graph_path, graph_type, distance, n_components, max_edges, max_percentage):
-        if self.create_new_graph:
+        # check if graph exists
+        if self.create_new_graph and not os.path.exists(graph_path):
+            print("********************* Graph does not exist. Constructing graph: ", graph_path)
             G = construct_graph(passage_embeddings, k_neighbours, graph_path, graph_type, distance, n_components, max_edges, max_percentage)
 
         else:
+            print("********************* Graph already exists. Loading graph from cache: ", graph_path)
             G = read_graph(graph_path)
         
         return G

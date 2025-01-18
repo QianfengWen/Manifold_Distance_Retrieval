@@ -38,9 +38,13 @@ def construct_knn_graph(passages_embeddings, k, file_path, distance="l2", mode="
     """
     Constructs a weighted graph based on k-nearest neighbors and returns a NetworkX graph.
     """
-    embeddings = create_spectral_embedding(passages_embeddings, k, n_components) if distance == "spectral" else passages_embeddings
+    embeddings = create_spectral_embedding(passages_embeddings, n_components, k, file_path) if distance == "spectral" else passages_embeddings
     print("Finished creating embeddings")
     adjacency_matrix = kneighbors_graph(embeddings, n_neighbors=k, mode=mode, include_self=False)
+    adjacency_matrix_include_self = kneighbors_graph(embeddings, n_neighbors=k, include_self=True)
+    adjacency_matrix_save_path = file_path.replace(".pkl", "_adjacency_matrix.pkl")
+    save_adjacency_matrix(adjacency_matrix_include_self, adjacency_matrix_save_path)
+
     print("Finished creating adjacency matrix")
     graph = nx.from_scipy_sparse_array(adjacency_matrix)
     print("Finished creating graph")
@@ -55,7 +59,7 @@ def construct_connected_graph(passages_embeddings, file_path, k=100, max_edges=N
     Constructs a connected graph with optional limits on the number of edges.
     """
     # prevent size being too large
-    embeddings = create_spectral_embedding(passages_embeddings, k, n_components) if distance == "spectral" else passages_embeddings
+    embeddings = create_spectral_embedding(passages_embeddings, n_components, k, file_path) if distance == "spectral" else passages_embeddings
     adjacency_matrix = kneighbors_graph(
         embeddings, n_neighbors=k, mode='distance', include_self=False
     )
@@ -104,6 +108,11 @@ def save_graph(G, file_path):
         pickle.dump(G, f)
     return
 
+def save_adjacency_matrix(adjacency_matrix, file_path):
+    print("Saving adjacency matrix to ", file_path)
+    with open(file_path, 'wb') as f:
+        pickle.dump(adjacency_matrix, f)
+    return
 
 def read_graph(file_path):
     # # read the graph using networkx
@@ -115,13 +124,27 @@ def read_graph(file_path):
         G = pickle.load(f)
     return G
 
+def read_adjacency_matrix(file_path):
+    with open(file_path, 'rb') as f:
+        adjacency_matrix = pickle.load(f)
+    return adjacency_matrix
 
-def create_spectral_embedding(embeddings, k, n_components, normalized=True):
+def create_spectral_embedding(embeddings, n_components, k, file_path):
     """
     Creates spectral embeddings from input embeddings by constructing a k-nearest neighbor graph,
     """
 
     # create a spectral embedding
-    spectral_embedding = SpectralEmbedding(n_components=n_components, affinity='nearest_neighbors', n_neighbors=k, random_state=311)
-    embeddings = spectral_embedding.fit_transform(embeddings)
+    file_path = file_path.replace(".pkl", "_adjacency_matrix.pkl").replace(f"_spectral_n_components={n_components}", "_l2")
+    if os.path.exists(file_path):
+        print("Loading spectral embeddings from ", file_path)
+        affinity_matrix = read_adjacency_matrix(file_path)
+        affinity_matrix = 0.5 * (affinity_matrix + affinity_matrix.T)
+        spectral_embedding = SpectralEmbedding(n_components=n_components, affinity='precomputed', random_state=311)
+        embeddings = spectral_embedding.fit_transform(affinity_matrix)
+    else:
+        print("Creating spectral embeddings from scratch")
+        spectral_embedding = SpectralEmbedding(n_components=n_components, affinity='nearest_neighbors', n_neighbors=k, random_state=311)
+        embeddings = spectral_embedding.fit_transform(embeddings)
     return embeddings
+
