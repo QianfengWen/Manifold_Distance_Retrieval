@@ -9,9 +9,10 @@ import json
 import pdb
 import torch
 from sklearn.manifold import SpectralEmbedding
-from networkx.readwrite import json_graph
 import pickle
 import time
+from scipy.sparse import csgraph
+from scipy import sparse
 
 # knn graph vs. connected graph
 # assert distance in ["l2", "spectral"], "distance must be either 'l2' or 'spectral'"
@@ -41,6 +42,7 @@ def construct_knn_graph(passages_embeddings, k, file_path, distance="l2", mode="
     """
     embeddings = create_spectral_embedding(passages_embeddings, n_components, k, file_path) if distance == "spectral" else passages_embeddings
     print("Finished creating embeddings")
+    print("the shape of the embeddings is", embeddings.shape)
     start = time.time()
     adjacency_matrix = kneighbors_graph(embeddings, n_neighbors=k, mode=mode, include_self=False)
     if distance == "l2":
@@ -133,30 +135,86 @@ def create_spectral_embedding(embeddings, n_components, k, file_path):
     """
     Creates spectral embeddings from input embeddings by constructing a k-nearest neighbor graph,
     """
-
-    # create a spectral embedding
     file_path = file_path.replace(".pkl", "_adjacency_matrix.pkl").replace(f"_spectral_n_components={n_components}", "_l2")
     if os.path.exists(file_path):
         print("Creating spectral embeddings using cached adjacency matrix ...")
         affinity_matrix = read_adjacency_matrix(file_path)
-        affinity_matrix = 0.5 * (affinity_matrix + affinity_matrix.T)
-        spectral_embedding = SpectralEmbedding(n_components=n_components, affinity='precomputed', random_state=311)
-        start = time.time()
-        embeddings = spectral_embedding.fit_transform(affinity_matrix)
-        end = time.time()
-        print("Finished fit_transform, it takes", end-start, "seconds")
     else:
         print("Creating spectral embeddings from scratch ...")
         start = time.time()
-        affinity_matrix = kneighbors_graph(embeddings, n_neighbors=k, include_self=True)
+        affinity_matrix = kneighbors_graph(
+            embeddings, 
+            n_neighbors=k,
+            mode='distance',
+            include_self=True
+        )
         end = time.time()
         print("Finished creating affinity matrix, it takes", end-start, "seconds")
         save_adjacency_matrix(affinity_matrix, file_path)
-        affinity_matrix = 0.5 * (affinity_matrix + affinity_matrix.T)
-        spectral_embedding = SpectralEmbedding(n_components=n_components, affinity='precomputed', random_state=311)
-        start = time.time()
-        embeddings = spectral_embedding.fit_transform(affinity_matrix)
-        end = time.time()
-        print("Finished fit_transform, it takes", end-start, "seconds")
-    return embeddings
+    
+    # Make matrix symmetric
+    affinity_matrix = 0.5 * (affinity_matrix + affinity_matrix.T)
+
+    print("Computing normalized Laplacian matrix...")
+    
+    # Convert affinity matrix to dense PyTorch tensor
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    A = torch.from_numpy(affinity_matrix.toarray() if sparse.issparse(affinity_matrix) else affinity_matrix).float().to(device)
+    
+    # Compute degree matrix
+    D = torch.diag(A.sum(dim=1))
+    
+    # Compute normalized Laplacian: L = I - D^(-1/2) A D^(-1/2)
+    D_sqrt_inv = torch.diag(1.0 / torch.sqrt(torch.diag(D) + 1e-8))  # Add small epsilon for numerical stability
+    L = torch.eye(A.shape[0], device=device) - D_sqrt_inv @ A @ D_sqrt_inv
+    
+    print(f"Computing eigenvectors on {device}...")
+    print("L shape:", L.shape)
+    # Compute eigenvectors and eigenvalues using PyTorch
+    eigenvalues, eigenvectors = torch.linalg.eigh(L)
+    
+    # Sort eigenvectors by eigenvalues in ascending order
+    idx = torch.argsort(eigenvalues)
+    eigenvectors = eigenvectors[:, idx]
+    
+    # Select the specified number of components
+    # Skip the first eigenvector (constant vector) as per spectral embedding convention
+    embedding = eigenvectors[:, 1:n_components+1]
+    
+    # Normalize the embedding using torch 
+    embedding = torch.nn.functional.normalize(embedding, dim=0)
+    
+    print("Finished computing spectral embedding")
+    return embedding.cpu().numpy()
+
+# def create_spectral_embedding(embeddings, n_components, k, file_path):
+#     """
+#     Creates spectral embeddings from input embeddings by constructing a k-nearest neighbor graph,
+#     """
+
+#     # create a spectral embedding
+#     file_path = file_path.replace(".pkl", "_adjacency_matrix.pkl").replace(f"_spectral_n_components={n_components}", "_l2")
+#     if os.path.exists(file_path):
+#         print("Creating spectral embeddings using cached adjacency matrix ...")
+#         affinity_matrix = read_adjacency_matrix(file_path)
+#         affinity_matrix = 0.5 * (affinity_matrix + affinity_matrix.T)
+#         spectral_embedding = SpectralEmbedding(n_components=n_components, affinity='precomputed', random_state=311)
+#         start = time.time()
+#         embeddings = spectral_embedding.fit_transform(affinity_matrix)
+#         end = time.time()
+#         print("Finished fit_transform, it takes", end-start, "seconds")
+#     else:
+#         print("Creating spectral embeddings from scratch ...")
+#         start = time.time()
+#         affinity_matrix = kneighbors_graph(embeddings, n_neighbors=k, include_self=True)
+#         end = time.time()
+#         print("Finished creating affinity matrix, it takes", end-start, "seconds")
+#         save_adjacency_matrix(affinity_matrix, file_path)
+#         affinity_matrix = 0.5 * (affinity_matrix + affinity_matrix.T)
+#         spectral_embedding = SpectralEmbedding(n_components=n_components, affinity='precomputed', random_state=311)
+#         start = time.time()
+#         embeddings = spectral_embedding.fit_transform(affinity_matrix)
+#         end = time.time()
+#         print("Finished fit_transform, it takes", end-start, "seconds")
+#     return embeddings
 

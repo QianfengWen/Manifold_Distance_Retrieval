@@ -5,8 +5,11 @@ from src.Retrieval.l2_dist_retrieval import retrieve_k
 from src.Retrieval.manifold_dist_retrieval import retrieve_k_manifold_baseline, retrieve_k_manifold_baseline_reciprocal
 from src.Evaluation.evaluation import evaluate
 from src.Graph.graph import construct_graph, read_graph
-from src.Embedding.embedding import create_embeddings, load_embeddings
-
+from src.Embedding.embedding import create_embeddings, load_embeddings, create_spectral_embedding, slice_embedding
+import torch
+from scipy import sparse
+import time
+import pdb
 class Pipeline:
     def __init__(self, experiment_name, **kwargs):
         experiment_path = os.path.join("results", experiment_name)
@@ -49,14 +52,17 @@ class Pipeline:
         
         if not with_cache:        
             # print("********************* Handling Embeddings *********************")
-            query_embeddings, passage_embeddings = self.handle_embeddings(self.model_name, self.query_embeddings_path, self.passage_embeddings_path, question_texts, passage_texts)
+            query_embeddings, passage_embeddings = self.handle_embeddings(self.model_name, self.query_embeddings_path, self.passage_embeddings_path, question_texts, passage_texts)  
+
+            if self.experiment_type == "manifold":
+                print("********************* Handling Graph *********************")
+                G = self.handle_graph(passage_embeddings, self.k_neighbours, self.graph_path, self.graph_type, self.distance, self.n_components, self.max_edges, self.max_percentage)
             
-            print("********************* Handling Graph *********************")
-            G = self.handle_graph(passage_embeddings, self.k_neighbours, self.graph_path, self.graph_type, self.distance, self.n_components, self.max_edges, self.max_percentage)
-            
-            print("********************* Running Evaluation *********************")
-            self.run_evaluation(self.experiment_type, self.k_list, self.evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, G, self.k_neighbours, self.distance)
-        
+                print("********************* Running Evaluation *********************")
+                self.run_evaluation(self.experiment_type, self.k_list, self.evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, G, self.k_neighbours, self.distance)
+
+            # baseline
+            self.run_evaluation("baseline", self.k_list, self.evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, distance="l2")
         else:
             print("********************* Running Evaluation with Cache *********************")
             self.run_evaluation_with_cache(self.k_list, self.evaluation_functions, question_ids, passage_ids, relevance_map)
@@ -69,6 +75,30 @@ class Pipeline:
     def handle_embeddings(self, model_name, query_embeddings_path, passage_embeddings_path, query_texts, passage_texts):
         if model_name:
             return create_embeddings(model_name, query_texts, passage_texts, query_embeddings_path, passage_embeddings_path)
+        
+        elif self.distance == "spectral":
+            # load the embeddings
+            query_embeddings, passage_embeddings = load_embeddings(query_embeddings_path, passage_embeddings_path)
+            all_embeddings = np.concatenate([query_embeddings, passage_embeddings], axis=0)
+            # revise the path
+            all_spectral_embeddings_path = os.path.join(os.path.dirname(query_embeddings_path), f"all_spectral_embeddings.pkl")
+
+            if os.path.exists(all_spectral_embeddings_path):
+                print(f"Loading embeddings from {all_spectral_embeddings_path}")
+                all_spectral_embeddings, _ = load_embeddings(all_spectral_embeddings_path, all_spectral_embeddings_path)
+                # split the embeddings
+                query_embeddings = all_spectral_embeddings[:len(query_embeddings)]
+                passage_embeddings = all_spectral_embeddings[len(query_embeddings):]
+
+                # slice the embeddings  
+                query_embeddings = slice_embedding(query_embeddings, self.n_components)
+                passage_embeddings = slice_embedding(passage_embeddings, self.n_components)
+            else:
+                spectral_embedding = create_spectral_embedding(all_embeddings, self.n_components, self.k_neighbours, self.graph_path, all_spectral_embeddings_path)
+                query_embeddings = spectral_embedding[:len(query_embeddings)]
+                passage_embeddings = spectral_embedding[len(query_embeddings):]
+
+            return query_embeddings, passage_embeddings
 
         else:
             return load_embeddings(query_embeddings_path, passage_embeddings_path)
@@ -85,7 +115,9 @@ class Pipeline:
         return G
         
 
-    def run_evaluation(self, experiment_type, k_list, evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, G, k_neighbours, distance):
+    def run_evaluation(self, experiment_type, k_list, evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, G=None, k_neighbours=None, distance=None):
+        print("the shape of the query embeddings is", query_embeddings.shape)
+        print("the shape of the passage embeddings is", passage_embeddings.shape)
         if experiment_type == "baseline":
             retrieve_results = retrieve_k(query_embeddings, distance, passage_embeddings, max(k_list))
         
