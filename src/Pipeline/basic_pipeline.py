@@ -5,7 +5,7 @@ from src.Retrieval.l2_dist_retrieval import retrieve_k
 from src.Retrieval.manifold_dist_retrieval import retrieve_k_manifold_baseline, retrieve_k_manifold_baseline_reciprocal
 from src.Evaluation.evaluation import evaluate
 from src.Graph.graph import construct_graph, read_graph
-from src.Embedding.embedding import create_embeddings, load_embeddings, create_spectral_embedding, slice_embedding
+from src.Embedding.embedding import create_embeddings, load_embeddings
 import torch
 from scipy import sparse
 import time
@@ -28,9 +28,10 @@ class Pipeline:
             # graph
             self.create_new_graph = kwargs["create_new_graph"]
             self.graph_path = kwargs["graph_path"]
-            self.graph_type = kwargs["graph_type"] # connected vs. knn
-            self.distance = kwargs["distance"] # l2, cos distance or spectral
+            self.distance = kwargs["distance"] # l2, cos distance 
             self.mode = kwargs["mode"] # connectivity (hop) vs. distance
+            self.use_spectral_decomposition = kwargs.get("use_spectral_decomposition", False)
+            self.query_projection = kwargs.get("query_projection", False)
             self.n_components = kwargs.get("n_components", None) # for spectral only
             self.max_edges = kwargs.get("max_edges", None) # for connected only
             self.max_percentage = kwargs.get("max_percentage", None) # for connected only
@@ -44,11 +45,7 @@ class Pipeline:
             raise
     
     def run_pipeline(self, with_cache=False):
-        # print(f"********************* Running Experiments: {self.experiment_path} *********************")
-
-        # print("********************* Loading Data *********************")
         question_ids, question_texts, passage_ids, passage_texts, relevance_map = self.load_data(self.dataloader)
-        
         
         if not with_cache:        
             # print("********************* Handling Embeddings *********************")
@@ -56,7 +53,9 @@ class Pipeline:
 
             if self.experiment_type == "manifold":
                 print("********************* Handling Graph *********************")
-                G = self.handle_graph(passage_embeddings, self.k_neighbours, self.graph_path, self.graph_type, self.distance, self.n_components, self.max_edges, self.max_percentage)
+                G, query_embeddings, passage_embeddings = self.handle_graph(query_embeddings, passage_embeddings, self.k_neighbours, self.graph_path, self.distance, self.n_components, self.use_spectral_decomposition, self.query_projection)
+                print("After handling graph, the shape of the query embeddings is", query_embeddings.shape)
+                print("After handling graph, the shape of the passage embeddings is", passage_embeddings.shape)
             
                 print("********************* Running Evaluation *********************")
                 self.run_evaluation(self.experiment_type, self.k_list, self.evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, G, self.k_neighbours, self.distance)
@@ -75,40 +74,14 @@ class Pipeline:
     def handle_embeddings(self, model_name, query_embeddings_path, passage_embeddings_path, query_texts, passage_texts):
         if model_name:
             return create_embeddings(model_name, query_texts, passage_texts, query_embeddings_path, passage_embeddings_path)
-        
-        elif self.distance == "spectral":
-            # load the embeddings
-            query_embeddings, passage_embeddings = load_embeddings(query_embeddings_path, passage_embeddings_path)
-            all_embeddings = np.concatenate([query_embeddings, passage_embeddings], axis=0)
-            # revise the path
-            all_spectral_embeddings_path = os.path.join(os.path.dirname(query_embeddings_path), f"all_spectral_embeddings.pkl")
-
-            if os.path.exists(all_spectral_embeddings_path):
-                print(f"Loading embeddings from {all_spectral_embeddings_path}")
-                all_spectral_embeddings, _ = load_embeddings(all_spectral_embeddings_path, all_spectral_embeddings_path)
-                # split the embeddings
-                query_embeddings = all_spectral_embeddings[:len(query_embeddings)]
-                passage_embeddings = all_spectral_embeddings[len(query_embeddings):]
-
-                # slice the embeddings  
-                query_embeddings = slice_embedding(query_embeddings, self.n_components)
-                passage_embeddings = slice_embedding(passage_embeddings, self.n_components)
-            else:
-                spectral_embedding = create_spectral_embedding(all_embeddings, self.n_components, self.k_neighbours, self.graph_path, all_spectral_embeddings_path)
-                query_embeddings = spectral_embedding[:len(query_embeddings)]
-                passage_embeddings = spectral_embedding[len(query_embeddings):]
-
-            return query_embeddings, passage_embeddings
-
         else:
             return load_embeddings(query_embeddings_path, passage_embeddings_path)
     
 
-    def handle_graph(self, passage_embeddings, k_neighbours, graph_path, graph_type, distance, n_components, max_edges, max_percentage):
+    def handle_graph(self, query_embeddings, passage_embeddings, k_neighbours, graph_path, distance, n_components, use_spectral_decomposition, query_projection):
         if self.create_new_graph and not os.path.exists(graph_path):
             print("Constructing Graph ...")
-            G = construct_graph(passage_embeddings, k_neighbours, graph_path, graph_type, distance, n_components, max_edges, max_percentage)
-
+            G = construct_graph(query_embeddings, passage_embeddings, k_neighbours, graph_path, distance, n_components, use_spectral_decomposition, query_projection)
         else:
             G = read_graph(graph_path)
         
