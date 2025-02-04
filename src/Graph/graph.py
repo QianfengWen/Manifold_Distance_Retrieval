@@ -13,31 +13,73 @@ import pickle
 import time
 from scipy.sparse import csgraph
 from scipy import sparse
+from copy import deepcopy
+
 
 # knn graph vs. connected graph
 # assert distance in ["l2", "spectral"], "distance must be either 'l2' or 'spectral'"
 # assert mode in ["connectivity", "distance"], "mode must be either 'connectivity' or 'distance'", # connectivity == unweighted, distance == weighted
 # assert isinstance(n_components, int) if distance == "spectral" else n_components is None, "n_components must be an integer if distance is 'spectral' or None if distance is 'l2'"
 
-def construct_graph(query_embeddings, passage_embeddings, file_path, k=100, distance="l2", n_components=None, use_spectral_decomposition=False, query_projection=False):
+def construct_graph(query_embeddings, passage_embeddings, file_path, eigenvectors_path, k=100, distance="l2", n_components=None, use_spectral_decomposition=False, query_projection=False):
     """
     Constructs a graph based on k-nearest neighbors and returns a NetworkX graph.
+    :param query_embeddings: numpy array of shape (num_queries, embedding_dim)
+    :param passage_embeddings: numpy array of shape (num_passages, embedding_dim)
+    :param file_path: path to save the graph
+    :param k: number of nearest neighbors
+    :param distance: distance metric
+    :param n_components: number of components for spectral embedding
+    :param use_spectral_decomposition: whether to use spectral decomposition
+    :param query_projection: whether to project the query embeddings to the spectral embedding space
+    :return: graph, query_embeddings, passage_embeddings, original_query_embeddings, original_passage_embeddings
     """    
-    return construct_knn_graph(query_embeddings, passage_embeddings, file_path, k, distance, "distance", n_components, use_spectral_decomposition, query_projection)
+    return construct_knn_graph(query_embeddings, passage_embeddings, file_path, eigenvectors_path, k, distance, "distance", n_components, use_spectral_decomposition, query_projection)
 
-def construct_knn_graph(query_embeddings, passages_embeddings, k, file_path, distance="l2", mode="connectivity", n_components=None, use_spectral_decomposition=False, query_projection=False):
+# def construct_knn_graph(query_embeddings, passages_embeddings, k, file_path, distance="l2", mode="connectivity", n_components=None, use_spectral_decomposition=False, query_projection=False):
+#     """
+#     Constructs a weighted graph based on k-nearest neighbors and returns a NetworkX graph.
+#     """
+#     if use_spectral_decomposition:
+#         query_embeddings, passages_embeddings, original_query_embeddings, original_passage_embeddings = create_spectral_embedding(query_embeddings, passages_embeddings, n_components, k, file_path, query_projection, distance)
+#     print("Finished creating passage embeddings")
+#     print("the shape of the passage embeddings is", passages_embeddings.shape)
+#     start = time.time()
+#     adjacency_matrix = kneighbors_graph(passages_embeddings, n_neighbors=k, mode=mode, include_self=False, metric=distance)
+#     if distance != "spectral":
+#         adjacency_matrix_include_self = kneighbors_graph(passages_embeddings, n_neighbors=k, include_self=True, metric=distance)
+#         adjacency_matrix_save_path = file_path.replace(".pkl", "_adjacency_matrix.pkl")
+#         save_adjacency_matrix(adjacency_matrix_include_self, adjacency_matrix_save_path)
+#     graph = nx.from_scipy_sparse_array(adjacency_matrix)
+#     end = time.time()
+#     print("Finished creating graph, it takes", end-start, "seconds")
+
+#     save_graph(graph, file_path)
+#     return graph, query_embeddings, passages_embeddings, original_query_embeddings, original_passage_embeddings
+
+def construct_knn_graph(query_embeddings, passages_embeddings, k, file_path, eigenvectors_path, distance="l2", mode="connectivity", n_components=None, use_spectral_decomposition=False, query_projection=False):
     """
     Constructs a weighted graph based on k-nearest neighbors and returns a NetworkX graph.
     """
     if use_spectral_decomposition:
-        query_embeddings, passages_embeddings = create_spectral_embedding(query_embeddings, passages_embeddings, n_components, k, file_path, query_projection, distance)
+       eigenvectors = create_spectral_embedding(query_embeddings, passages_embeddings, n_components, k, file_path, query_projection, distance)
+       # save eigenvectors using pickle
+       with open(eigenvectors_path, 'wb') as f:
+           pickle.dump(eigenvectors, f)
+       passages_embeddings = eigenvectors[:, 1:n_components+1] 
+
     print("Finished creating passage embeddings")
     print("the shape of the passage embeddings is", passages_embeddings.shape)
     start = time.time()
+    if type(passages_embeddings) == torch.Tensor:
+        passages_embeddings = passages_embeddings.cpu().numpy()
     adjacency_matrix = kneighbors_graph(passages_embeddings, n_neighbors=k, mode=mode, include_self=False, metric=distance)
     if distance != "spectral":
+
         adjacency_matrix_include_self = kneighbors_graph(passages_embeddings, n_neighbors=k, include_self=True, metric=distance)
+
         adjacency_matrix_save_path = file_path.replace(".pkl", "_adjacency_matrix.pkl")
+
         save_adjacency_matrix(adjacency_matrix_include_self, adjacency_matrix_save_path)
     graph = nx.from_scipy_sparse_array(adjacency_matrix)
     end = time.time()
@@ -76,9 +118,15 @@ def create_spectral_embedding(query_embeddings, passage_embeddings, n_components
     Creates spectral embeddings from input embeddings by constructing a k-nearest neighbor graph,
     """
     file_path = file_path.replace(".pkl", "_adjacency_matrix.pkl").replace(f"_spectral_n_components={n_components}", f"_{distance}")
+
+    # deep copy original embeddings
+    original_query_embeddings = deepcopy(query_embeddings)
+    original_passage_embeddings = deepcopy(passage_embeddings)
+
     if os.path.exists(file_path):
         print("Creating spectral embeddings using cached adjacency matrix ...")
         affinity_matrix = read_adjacency_matrix(file_path)
+
     else:
         print("Creating spectral embeddings from scratch ...")
         start = time.time()
@@ -117,20 +165,30 @@ def create_spectral_embedding(query_embeddings, passage_embeddings, n_components
     # Sort eigenvectors by eigenvalues in ascending order
     idx = torch.argsort(eigenvalues)
     eigenvectors = eigenvectors[:, idx]
-    
-    # Select the specified number of components
-    # Skip the first eigenvector (constant vector) as per spectral embedding convention
-    embedding = eigenvectors[:, 1:n_components+1]
-    
-    # project the query embeddings to the spectral embedding space
-    if query_projection:
-        query_embeddings = torch.from_numpy(query_embeddings).float().to(device)
-        query_embeddings = query_embeddings @ embedding
-        query_embeddings = torch.nn.functional.normalize(query_embeddings, dim=0)
-    
-    # Normalize the embedding using torch 
-    passage_embeddings = torch.nn.functional.normalize(embedding, dim=0)
 
+    return eigenvectors
     
-    print("Finished computing spectral embedding")
-    return query_embeddings.cpu().numpy(), passage_embeddings.cpu().numpy()
+    # # Select the specified number of components
+    # # Skip the first eigenvector (constant vector) as per spectral embedding convention
+    # embedding = eigenvectors[:, 1:n_components+1]
+    
+    # # project the query embeddings to the spectral embedding space
+    # if query_projection:
+    #     query_embeddings = torch.from_numpy(query_embeddings).float().to(device)
+    #     query_embeddings = query_embeddings @ embedding
+    #     query_embeddings = torch.nn.functional.normalize(query_embeddings, dim=0)
+    
+    # # Normalize the embedding using torch 
+    # passage_embeddings = torch.nn.functional.normalize(embedding, dim=0)
+
+    # # assign the query embeddings and passage embeddings to the cpu if they are on the gpu
+    # if type(query_embeddings) == torch.Tensor:
+    #     query_embeddings = query_embeddings.cpu().numpy()
+    # if type(passage_embeddings) == torch.Tensor:
+    #     passage_embeddings = passage_embeddings.cpu().numpy()
+
+
+    # print("Finished computing spectral embedding")
+    # return query_embeddings, passage_embeddings, original_query_embeddings, original_passage_embeddings
+
+

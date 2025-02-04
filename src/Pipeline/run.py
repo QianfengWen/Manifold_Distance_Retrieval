@@ -19,11 +19,12 @@ if __name__ == "__main__":
                             ]
     distance_type_list = ["euclidean", "cosine"]
     use_spectral_decomposition = True
-    query_projection = False
+    query_projection = True
     n_components_list = [700, 500, 300, 100]
     mode_list = ["connectivity", "distance"]
     for k in k_list:
         for distance_type in distance_type_list:
+            eigenvectors_path = f"data/{dataset_name}/eigenvectors_k={k}_{distance_type}.pkl"
             for mode in mode_list:  
                 if use_spectral_decomposition:
                     for n_components in n_components_list:
@@ -43,12 +44,13 @@ if __name__ == "__main__":
                             "distance": distance_type,
                             "mode": mode,
                             "n_components": n_components,
+                            "eigenvectors_path": eigenvectors_path,
 
                             "evaluation_functions": [recall_k, precision_k, mean_average_precision_k],
                             "k_list": [1, 3, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
                         }
                         pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['distance']}_n_components={pipeline_kwargs['n_components']}.pkl"
-                        experiment_name = f"{dataset_name}/k={pipeline_kwargs['k_neighbours']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}__n_components={pipeline_kwargs['n_components']}"
+                        experiment_name = f"{dataset_name}/k={pipeline_kwargs['k_neighbours']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}__n_components={pipeline_kwargs['n_components']}__query_projection={pipeline_kwargs['query_projection']}"
                         # experiment_name = f"baseline/{dataset_name}_spectral_n_components={pipeline_kwargs['n_components']}"
                         pipeline = Pipeline(experiment_name, **pipeline_kwargs)
                         start = time.time()
@@ -59,18 +61,19 @@ if __name__ == "__main__":
                     print(f"Running experiment for k = {k}, distance_type = {distance_type}, distance mode = {mode}")
                     pipeline_kwargs = {
                         "dataloader": available_datasets[dataset_name](),
-                        "model_name": embedding_model_list[0],
+                        # "model_name": embedding_model_list[0],
                         "query_embeddings_path": f"data/{dataset_name}/{embedding_model_list[0]}-query_embeddings.pkl",
                         "passage_embeddings_path": f"data/{dataset_name}/{embedding_model_list[0]}-doc_embeddings.pkl",
 
-                        # "experiment_type": "manifold",
-                        "experiment_type": "baseline",
+                        "experiment_type": "manifold",
+                        # "experiment_type": "baseline",
                         "create_new_graph": True,
                         "use_spectral_decomposition": False,
                         "query_projection": False,
                         "k_neighbours": k,
                         "distance": distance_type,
                         "mode": mode,
+                        "eigenvectors_path": None,
 
                         "evaluation_functions": [recall_k, precision_k, mean_average_precision_k],
                         "k_list": [1, 3, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
