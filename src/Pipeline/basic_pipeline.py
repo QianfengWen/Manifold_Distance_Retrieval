@@ -32,7 +32,7 @@ class Pipeline:
             self.graph_path = kwargs["graph_path"]
             self.distance = kwargs["distance"] # l2, cos distance 
             self.mode = kwargs["mode"] # connectivity (hop) vs. distance
-            self.use_spectral_decomposition = kwargs.get("use_spectral_decomposition", False)
+            self.use_spectral_distance = kwargs.get("use_spectral_distance", False)
             self.query_projection = kwargs.get("query_projection", False)
             self.eigenvectors_path = kwargs.get("eigenvectors_path", None)
             self.n_components = kwargs.get("n_components", None) # for spectral only
@@ -55,7 +55,7 @@ class Pipeline:
 
             if self.experiment_type == "manifold":
                 print("********************* Handling Graph *********************")
-                G, query_embeddings, passage_embeddings = self.handle_graph(query_embeddings, passage_embeddings, self.k_neighbours, self.graph_path, self.eigenvectors_path, self.distance, self.n_components, self.use_spectral_decomposition, self.query_projection)
+                G, query_embeddings, passage_embeddings = self.handle_graph(query_embeddings, passage_embeddings, self.k_neighbours, self.graph_path, self.eigenvectors_path, self.distance, self.n_components, self.use_spectral_distance, self.query_projection)
                 print("********************* Running Evaluation *********************")
                 self.run_evaluation(self.experiment_type, self.k_list, self.evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, G, self.k_neighbours, self.distance)
 
@@ -137,14 +137,14 @@ class Pipeline:
         return queries_spectral
     
 
-    def handle_graph(self, query_embeddings, passage_embeddings, k_neighbours, graph_path, eigenvectors_path, distance, n_components, use_spectral_decomposition, query_projection):
+    def handle_graph(self, query_embeddings, passage_embeddings, k_neighbours, graph_path, eigenvectors_path, distance, n_components, use_spectral_distance, query_projection):
         original_query_embeddings = copy.deepcopy(query_embeddings)
         original_passage_embeddings = copy.deepcopy(passage_embeddings)
         if self.create_new_graph and not os.path.exists(graph_path):
             print("Constructing Graph ...")
 
-            G, query_embeddings, passage_embeddings = construct_graph(query_embeddings, passage_embeddings, k_neighbours, graph_path, eigenvectors_path, distance, n_components, use_spectral_decomposition, query_projection)
-            if use_spectral_decomposition:
+            G, query_embeddings, passage_embeddings = construct_graph(query_embeddings, passage_embeddings, k_neighbours, graph_path, eigenvectors_path, distance, n_components, use_spectral_distance, query_projection)
+            if use_spectral_distance:
                 if query_projection:
                     query_embeddings = self.out_of_sample_barycentric(original_query_embeddings, original_passage_embeddings, passage_embeddings)
                     return G, query_embeddings, passage_embeddings
@@ -154,7 +154,7 @@ class Pipeline:
                 return G, original_query_embeddings, original_passage_embeddings
         else:
             G = read_graph(graph_path)
-            if use_spectral_decomposition:
+            if use_spectral_distance:
                 if query_projection:
                     eigenvectors = pickle.load(open(eigenvectors_path, "br"))
                     spectral_passage_embeddings = eigenvectors[:, 1:n_components+1]

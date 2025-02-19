@@ -7,6 +7,6 @@ MODE_LIST="connectivity distance"
 python -m src.Pipeline.run \
     --k_list $K_LIST \
     --embedding_model_list $EMBEDDING_MODEL_LIST \
-    --use_spectral_decomposition 0 \
+    --use_spectral_distance 0 \
     --mode_list $MODE_LIST \
     --experiment_type "manifold"

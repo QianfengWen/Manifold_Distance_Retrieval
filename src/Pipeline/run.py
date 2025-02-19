@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument("--k_list", type=int, nargs="+", default=[1], help="List of k values for KNN.")
     parser.add_argument("--embedding_model_list", type=str, nargs="+", 
                         default=["msmarco-distilbert-base-tas-b"], help="List of embedding models to use.")
-    parser.add_argument("--use_spectral_decomposition", type=int, default=0)
+    parser.add_argument("--use_spectral_distance", type=int, default=0)
     parser.add_argument("--n_components_list", type=int, nargs="+", 
                         default=[700], help="List of components for dimensionality reduction.")
     parser.add_argument("--mode_list", type=str, nargs="+", 
@@ -36,7 +36,7 @@ if __name__ == "__main__":
             for k in args.k_list:
                 eigenvectors_path = f"data/{dataset_name}/eigenvectors_k={k}_euclidean.pkl"
                 for mode in args.mode_list:  
-                    if args.use_spectral_decomposition:
+                    if args.use_spectral_distance:
                         for n_components in args.n_components_list:
                             print(f"\n\nRunning manifold experiment for for {dataset_name} and {embedding_model} with k = {k}, distance_type = euclidean, distance mode = {mode}, n_components = {n_components}")
                             pipeline_kwargs = {
@@ -46,7 +46,7 @@ if __name__ == "__main__":
 
                                 "experiment_type": args.experiment_type,
                                 "create_new_graph": True,
-                                "use_spectral_decomposition": True,
+                                "use_spectral_distance": True,
                                 "query_projection": False,
                                 "k_neighbours": k,
                                 "distance": "euclidean",
@@ -75,7 +75,7 @@ if __name__ == "__main__":
                             "passage_embeddings_path": f"data/{dataset_name}/{embedding_model}-doc_embeddings.pkl",
                             "experiment_type": args.experiment_type,
                             "create_new_graph": True,
-                            "use_spectral_decomposition": False,
+                            "use_spectral_distance": False,
                             "query_projection": False,
                             "k_neighbours": k,
                             "distance": "euclidean",

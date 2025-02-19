@@ -21,7 +21,7 @@ from copy import deepcopy
 # assert mode in ["connectivity", "distance"], "mode must be either 'connectivity' or 'distance'", # connectivity == unweighted, distance == weighted
 # assert isinstance(n_components, int) if distance == "spectral" else n_components is None, "n_components must be an integer if distance is 'spectral' or None if distance is 'l2'"
 
-def construct_graph(query_embeddings, passage_embeddings, file_path, eigenvectors_path, k=100, distance="l2", n_components=None, use_spectral_decomposition=False, query_projection=False):
+def construct_graph(query_embeddings, passage_embeddings, file_path, eigenvectors_path, k=100, distance="l2", n_components=None, use_spectral_distance=False, query_projection=False):
     """
     Constructs a graph based on k-nearest neighbors and returns a NetworkX graph.
     :param query_embeddings: numpy array of shape (num_queries, embedding_dim)
@@ -30,17 +30,17 @@ def construct_graph(query_embeddings, passage_embeddings, file_path, eigenvector
     :param k: number of nearest neighbors
     :param distance: distance metric
     :param n_components: number of components for spectral embedding
-    :param use_spectral_decomposition: whether to use spectral decomposition
+    :param use_spectral_distance: whether to use spectral decomposition
     :param query_projection: whether to project the query embeddings to the spectral embedding space
     :return: graph, query_embeddings, passage_embeddings, original_query_embeddings, original_passage_embeddings
     """    
-    return construct_knn_graph(query_embeddings, passage_embeddings, file_path, eigenvectors_path, k, distance, "distance", n_components, use_spectral_decomposition, query_projection)
+    return construct_knn_graph(query_embeddings, passage_embeddings, file_path, eigenvectors_path, k, distance, "distance", n_components, use_spectral_distance, query_projection)
 
-def construct_knn_graph(query_embeddings, passages_embeddings, k, file_path, eigenvectors_path, distance="l2", mode="connectivity", n_components=None, use_spectral_decomposition=False, query_projection=False):
+def construct_knn_graph(query_embeddings, passages_embeddings, k, file_path, eigenvectors_path, distance="l2", mode="connectivity", n_components=None, use_spectral_distance=False, query_projection=False):
     """
     Constructs a weighted graph based on k-nearest neighbors and returns a NetworkX graph.
     """
-    if use_spectral_decomposition:
+    if use_spectral_distance:
        eigenvectors = create_spectral_embedding(query_embeddings, passages_embeddings, n_components, k, file_path, query_projection, distance)
        # save eigenvectors using pickle
        with open(eigenvectors_path, 'wb') as f:
@@ -50,7 +50,7 @@ def construct_knn_graph(query_embeddings, passages_embeddings, k, file_path, eig
     if type(passages_embeddings) == torch.Tensor:
         passages_embeddings = passages_embeddings.cpu().numpy()
     adjacency_matrix = kneighbors_graph(passages_embeddings, n_neighbors=k, mode=mode, include_self=False, metric=distance)
-    if not use_spectral_decomposition:
+    if not use_spectral_distance:
 
         adjacency_matrix_include_self = kneighbors_graph(passages_embeddings, n_neighbors=k, include_self=True, metric=distance)
 
