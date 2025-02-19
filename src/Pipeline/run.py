@@ -6,6 +6,7 @@ from src.Evaluation.evaluation import recall_k, precision_k, mean_average_precis
 from src.Pipeline.basic_pipeline import Pipeline
 import time
 import argparse
+import os
 
 available_datasets = {
     "scidocs": Scidocs, 
@@ -59,6 +60,8 @@ if __name__ == "__main__":
                             }
                             pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['distance']}_n_components={pipeline_kwargs['n_components']}_{embedding_model}.pkl"
                             experiment_name = f"{dataset_name}/{embedding_model}/k={pipeline_kwargs['k_neighbours']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}__n_components={pipeline_kwargs['n_components']}"
+                            if not os.path.exists(pipeline_kwargs["query_embeddings_path"]) or not os.path.exists(pipeline_kwargs["passage_embeddings_path"]):
+                                pipeline_kwargs["model_name"] = embedding_model
                             pipeline = Pipeline(experiment_name, **pipeline_kwargs)
                             start = time.time()
                             pipeline.run_pipeline()
@@ -90,6 +93,8 @@ if __name__ == "__main__":
                             experiment_name = f"{dataset_name}/{embedding_model}/k={pipeline_kwargs['k_neighbours']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}"
                         elif args.experiment_type == "baseline":
                             experiment_name = f"{dataset_name}/{embedding_model}/baseline___distance_type={pipeline_kwargs['distance']}"
+                        if not os.path.exists(pipeline_kwargs["query_embeddings_path"]) or not os.path.exists(pipeline_kwargs["passage_embeddings_path"]):
+                            pipeline_kwargs["model_name"] = embedding_model
                         pipeline = Pipeline(experiment_name, **pipeline_kwargs)
                         start = time.time()
                         pipeline.run_pipeline()
