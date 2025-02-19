@@ -1,10 +1,12 @@
 from collections import defaultdict
 from datasets import load_dataset
+from src.Dataset.dataloader import Dataloader
 
-class MSMARCO:
+class MSMARCO(Dataloader):
 
     def load_dataset(self):
         dataset = load_dataset("microsoft/ms_marco", 'v1.1', cache_dir="data", split="test")
+
         dataset = dataset.shuffle(seed=42).select(range(3000))
         # dataset = dataset.shuffle(seed=42)
         return dataset

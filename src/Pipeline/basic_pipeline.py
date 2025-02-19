@@ -2,7 +2,7 @@ import numpy as np
 from collections import defaultdict
 import json, os, pickle
 from src.Retrieval.l2_dist_retrieval import retrieve_k
-from src.Retrieval.manifold_dist_retrieval import retrieve_k_manifold_baseline, retrieve_k_manifold_baseline_reciprocal
+from src.Retrieval.manifold_dist_retrieval import retrieve_k_manifold_baseline
 from src.Evaluation.evaluation import evaluate
 from src.Graph.graph import construct_graph, read_graph
 from src.Embedding.embedding import create_embeddings, load_embeddings
@@ -51,21 +51,18 @@ class Pipeline:
         question_ids, question_texts, passage_ids, passage_texts, relevance_map = self.load_data(self.dataloader)
         
         if not with_cache:        
-            # print("********************* Handling Embeddings *********************")
             query_embeddings, passage_embeddings = self.handle_embeddings(self.model_name, self.query_embeddings_path, self.passage_embeddings_path, question_texts, passage_texts)  
 
             if self.experiment_type == "manifold":
                 print("********************* Handling Graph *********************")
                 G, query_embeddings, passage_embeddings = self.handle_graph(query_embeddings, passage_embeddings, self.k_neighbours, self.graph_path, self.eigenvectors_path, self.distance, self.n_components, self.use_spectral_decomposition, self.query_projection)
-                print("After handling graph, the shape of the query embeddings is", query_embeddings.shape)
-
-                print("After handling graph, the shape of the passage embeddings is", passage_embeddings.shape)
-
                 print("********************* Running Evaluation *********************")
                 self.run_evaluation(self.experiment_type, self.k_list, self.evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, G, self.k_neighbours, self.distance)
 
             # baseline
-            self.run_evaluation("baseline", self.k_list, self.evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, distance="l2")
+            else:
+                print("********************* Running Baseline Evaluation *********************")
+                self.run_evaluation("baseline", self.k_list, self.evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, None, None, self.distance)
         else:
             print("********************* Running Evaluation with Cache *********************")
             self.run_evaluation_with_cache(self.k_list, self.evaluation_functions, question_ids, passage_ids, relevance_map)
@@ -170,16 +167,14 @@ class Pipeline:
                 return G, original_query_embeddings, original_passage_embeddings
         
     def run_evaluation(self, experiment_type, k_list, evaluation_functions, question_ids, passage_ids, query_embeddings, passage_embeddings, relevance_map, G=None, k_neighbours=None, distance=None):
-        print("the shape of the query embeddings is", query_embeddings.shape)
-        print("the shape of the passage embeddings is", passage_embeddings.shape)
         if experiment_type == "baseline":
             retrieve_results = retrieve_k(query_embeddings, distance, passage_embeddings, max(k_list))
         
         elif experiment_type == "manifold":
             if self.mode == "connectivity":
-                retrieve_results = retrieve_k_manifold_baseline(G, query_embeddings, passage_embeddings, k_neighbours, max(k_list), False)
+                retrieve_results = retrieve_k_manifold_baseline(G, query_embeddings, passage_embeddings, k_neighbours, max(k_list), False, distance)
             elif self.mode == "distance":
-                retrieve_results = retrieve_k_manifold_baseline(G, query_embeddings, passage_embeddings, k_neighbours, max(k_list), True)
+                retrieve_results = retrieve_k_manifold_baseline(G, query_embeddings, passage_embeddings, k_neighbours, max(k_list), True, distance)
 
         retrieval_path = os.path.join(self.experiment_path, f"{experiment_type}_retrieval_results.pkl")
         with open(retrieval_path, "bw") as f:

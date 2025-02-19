@@ -36,27 +36,6 @@ def construct_graph(query_embeddings, passage_embeddings, file_path, eigenvector
     """    
     return construct_knn_graph(query_embeddings, passage_embeddings, file_path, eigenvectors_path, k, distance, "distance", n_components, use_spectral_decomposition, query_projection)
 
-# def construct_knn_graph(query_embeddings, passages_embeddings, k, file_path, distance="l2", mode="connectivity", n_components=None, use_spectral_decomposition=False, query_projection=False):
-#     """
-#     Constructs a weighted graph based on k-nearest neighbors and returns a NetworkX graph.
-#     """
-#     if use_spectral_decomposition:
-#         query_embeddings, passages_embeddings, original_query_embeddings, original_passage_embeddings = create_spectral_embedding(query_embeddings, passages_embeddings, n_components, k, file_path, query_projection, distance)
-#     print("Finished creating passage embeddings")
-#     print("the shape of the passage embeddings is", passages_embeddings.shape)
-#     start = time.time()
-#     adjacency_matrix = kneighbors_graph(passages_embeddings, n_neighbors=k, mode=mode, include_self=False, metric=distance)
-#     if distance != "spectral":
-#         adjacency_matrix_include_self = kneighbors_graph(passages_embeddings, n_neighbors=k, include_self=True, metric=distance)
-#         adjacency_matrix_save_path = file_path.replace(".pkl", "_adjacency_matrix.pkl")
-#         save_adjacency_matrix(adjacency_matrix_include_self, adjacency_matrix_save_path)
-#     graph = nx.from_scipy_sparse_array(adjacency_matrix)
-#     end = time.time()
-#     print("Finished creating graph, it takes", end-start, "seconds")
-
-#     save_graph(graph, file_path)
-#     return graph, query_embeddings, passages_embeddings, original_query_embeddings, original_passage_embeddings
-
 def construct_knn_graph(query_embeddings, passages_embeddings, k, file_path, eigenvectors_path, distance="l2", mode="connectivity", n_components=None, use_spectral_decomposition=False, query_projection=False):
     """
     Constructs a weighted graph based on k-nearest neighbors and returns a NetworkX graph.
@@ -67,14 +46,11 @@ def construct_knn_graph(query_embeddings, passages_embeddings, k, file_path, eig
        with open(eigenvectors_path, 'wb') as f:
            pickle.dump(eigenvectors, f)
        passages_embeddings = eigenvectors[:, 1:n_components+1] 
-
-    print("Finished creating passage embeddings")
-    print("the shape of the passage embeddings is", passages_embeddings.shape)
     start = time.time()
     if type(passages_embeddings) == torch.Tensor:
         passages_embeddings = passages_embeddings.cpu().numpy()
     adjacency_matrix = kneighbors_graph(passages_embeddings, n_neighbors=k, mode=mode, include_self=False, metric=distance)
-    if distance != "spectral":
+    if not use_spectral_decomposition:
 
         adjacency_matrix_include_self = kneighbors_graph(passages_embeddings, n_neighbors=k, include_self=True, metric=distance)
 
@@ -143,8 +119,6 @@ def create_spectral_embedding(query_embeddings, passage_embeddings, n_components
     
     # Make matrix symmetric
     affinity_matrix = 0.5 * (affinity_matrix + affinity_matrix.T)
-
-    print("Computing normalized Laplacian matrix...")
     
     # Convert affinity matrix to dense PyTorch tensor
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -156,9 +130,6 @@ def create_spectral_embedding(query_embeddings, passage_embeddings, n_components
     # Compute normalized Laplacian: L = I - D^(-1/2) A D^(-1/2)
     D_sqrt_inv = torch.diag(1.0 / torch.sqrt(torch.diag(D) + 1e-8))  # Add small epsilon for numerical stability
     L = torch.eye(A.shape[0], device=device) - D_sqrt_inv @ A @ D_sqrt_inv
-    
-    print(f"Computing eigenvectors on {device}...")
-    print("L shape:", L.shape)
     # Compute eigenvectors and eigenvalues using PyTorch
     eigenvalues, eigenvectors = torch.linalg.eigh(L)
     
@@ -167,28 +138,4 @@ def create_spectral_embedding(query_embeddings, passage_embeddings, n_components
     eigenvectors = eigenvectors[:, idx]
 
     return eigenvectors
-    
-    # # Select the specified number of components
-    # # Skip the first eigenvector (constant vector) as per spectral embedding convention
-    # embedding = eigenvectors[:, 1:n_components+1]
-    
-    # # project the query embeddings to the spectral embedding space
-    # if query_projection:
-    #     query_embeddings = torch.from_numpy(query_embeddings).float().to(device)
-    #     query_embeddings = query_embeddings @ embedding
-    #     query_embeddings = torch.nn.functional.normalize(query_embeddings, dim=0)
-    
-    # # Normalize the embedding using torch 
-    # passage_embeddings = torch.nn.functional.normalize(embedding, dim=0)
-
-    # # assign the query embeddings and passage embeddings to the cpu if they are on the gpu
-    # if type(query_embeddings) == torch.Tensor:
-    #     query_embeddings = query_embeddings.cpu().numpy()
-    # if type(passage_embeddings) == torch.Tensor:
-    #     passage_embeddings = passage_embeddings.cpu().numpy()
-
-
-    # print("Finished computing spectral embedding")
-    # return query_embeddings, passage_embeddings, original_query_embeddings, original_passage_embeddings
-
 
