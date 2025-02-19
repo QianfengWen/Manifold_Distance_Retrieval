@@ -9,7 +9,7 @@ import argparse
 
 available_datasets = {
     "scidocs": Scidocs, 
-    # "msmarco": MSMARCO, 
+    "msmarco": MSMARCO, 
     "antique": Antique, 
     "NFCorpus": NFCorpus
 }

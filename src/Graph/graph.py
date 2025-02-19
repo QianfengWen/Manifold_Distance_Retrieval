@@ -5,21 +5,11 @@ import numpy as np
 from scipy.linalg import eigh
 from tqdm import tqdm
 import os
-import json
-import pdb
 import torch
-from sklearn.manifold import SpectralEmbedding
 import pickle
 import time
-from scipy.sparse import csgraph
 from scipy import sparse
 from copy import deepcopy
-
-
-# knn graph vs. connected graph
-# assert distance in ["l2", "spectral"], "distance must be either 'l2' or 'spectral'"
-# assert mode in ["connectivity", "distance"], "mode must be either 'connectivity' or 'distance'", # connectivity == unweighted, distance == weighted
-# assert isinstance(n_components, int) if distance == "spectral" else n_components is None, "n_components must be an integer if distance is 'spectral' or None if distance is 'l2'"
 
 def construct_graph(query_embeddings, passage_embeddings, file_path, eigenvectors_path, k=100, distance="l2", n_components=None, use_spectral_distance=False, query_projection=False):
     """
