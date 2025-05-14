@@ -2,7 +2,7 @@ from src.Dataset.scidocs import Scidocs
 from src.Dataset.msmarco import MSMARCO
 from src.Dataset.nfcorpus import NFCorpus
 from src.Dataset.antique import Antique
-from src.Evaluation.evaluation import recall_k, precision_k, mean_average_precision_k
+from src.Evaluation.evaluation import recall_k, precision_k, mean_average_precision_k, ndcg_k
 from src.Pipeline.basic_pipeline import Pipeline
 import time
 import argparse
@@ -33,6 +33,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     for embedding_model in args.embedding_model_list:
+        embedding_model_save_name = embedding_model.split("/")[-1]
         for dataset_name in available_datasets.keys():
             for k in args.k_list:
                 eigenvectors_path = f"data/{dataset_name}/eigenvectors_k={k}_euclidean.pkl"
@@ -42,8 +43,8 @@ if __name__ == "__main__":
                             print(f"\n\nRunning manifold experiment for for {dataset_name} and {embedding_model} with k = {k}, distance_type = euclidean, distance mode = {mode}, n_components = {n_components}")
                             pipeline_kwargs = {
                                 "dataloader": available_datasets[dataset_name](),
-                                "query_embeddings_path": f"data/{dataset_name}/{embedding_model}-query_embeddings.pkl",
-                                "passage_embeddings_path": f"data/{dataset_name}/{embedding_model}-doc_embeddings.pkl",
+                                "query_embeddings_path": f"data/{dataset_name}/{embedding_model_save_name}-query_embeddings.pkl",
+                                "passage_embeddings_path": f"data/{dataset_name}/{embedding_model_save_name}-doc_embeddings.pkl",
 
                                 "experiment_type": args.experiment_type,
                                 "create_new_graph": True,
@@ -55,11 +56,11 @@ if __name__ == "__main__":
                                 "n_components": n_components,
                                 "eigenvectors_path": eigenvectors_path,
 
-                                "evaluation_functions": [recall_k, precision_k, mean_average_precision_k],
+                                "evaluation_functions": [recall_k, precision_k, mean_average_precision_k, ndcg_k],
                                 "k_list": [1, 3, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
                             }
-                            pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['distance']}_n_components={pipeline_kwargs['n_components']}_{embedding_model}.pkl"
-                            experiment_name = f"{dataset_name}/{embedding_model}/k={pipeline_kwargs['k_neighbours']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}__n_components={pipeline_kwargs['n_components']}"
+                            pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['distance']}_n_components={pipeline_kwargs['n_components']}_{embedding_model_save_name}.pkl"
+                            experiment_name = f"{dataset_name}/{embedding_model_save_name}/k={pipeline_kwargs['k_neighbours']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}__n_components={pipeline_kwargs['n_components']}"
                             if not os.path.exists(pipeline_kwargs["query_embeddings_path"]) or not os.path.exists(pipeline_kwargs["passage_embeddings_path"]):
                                 pipeline_kwargs["model_name"] = embedding_model
                             pipeline = Pipeline(experiment_name, **pipeline_kwargs)
@@ -69,13 +70,13 @@ if __name__ == "__main__":
                             print("Finished running the experiment, it takes", end-start, "seconds")
                     else:
                         if args.experiment_type == "baseline":
-                            print(f"\n\nRunning baseline experiment for {dataset_name} and {embedding_model} with distance type = euclidean")
+                            print(f"\n\nRunning baseline experiment for {dataset_name} and {embedding_model_save_name} with distance type = euclidean")
                         elif args.experiment_type == "manifold":
-                            print(f"\n\nRunning manifold experiment for {dataset_name} and {embedding_model} with k = {k}, distance_type = euclidean, distance mode = {mode}")
+                            print(f"\n\nRunning manifold experiment for {dataset_name} and {embedding_model_save_name} with k = {k}, distance_type = euclidean, distance mode = {mode}")
                         pipeline_kwargs = {
                             "dataloader": available_datasets[dataset_name](),
-                            "query_embeddings_path": f"data/{dataset_name}/{embedding_model}-query_embeddings.pkl",
-                            "passage_embeddings_path": f"data/{dataset_name}/{embedding_model}-doc_embeddings.pkl",
+                            "query_embeddings_path": f"data/{dataset_name}/{embedding_model_save_name}-query_embeddings.pkl",
+                            "passage_embeddings_path": f"data/{dataset_name}/{embedding_model_save_name}-doc_embeddings.pkl",
                             "experiment_type": args.experiment_type,
                             "create_new_graph": True,
                             "use_spectral_distance": False,
@@ -85,14 +86,14 @@ if __name__ == "__main__":
                             "mode": mode,
                             "eigenvectors_path": None,
 
-                            "evaluation_functions": [recall_k, precision_k, mean_average_precision_k],
+                            "evaluation_functions": [recall_k, precision_k, mean_average_precision_k, ndcg_k],
                             "k_list": [1, 3, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
                         }  
-                        pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['distance']}_{embedding_model}.pkl"
+                        pipeline_kwargs["graph_path"] = f"data/{dataset_name}/graph_k={pipeline_kwargs['k_neighbours']}_{pipeline_kwargs['distance']}_{embedding_model_save_name}.pkl"
                         if args.experiment_type == "manifold":
-                            experiment_name = f"{dataset_name}/{embedding_model}/k={pipeline_kwargs['k_neighbours']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}"
+                            experiment_name = f"{dataset_name}/{embedding_model_save_name}/k={pipeline_kwargs['k_neighbours']}___mode={pipeline_kwargs['mode']}___distance_type={pipeline_kwargs['distance']}"
                         elif args.experiment_type == "baseline":
-                            experiment_name = f"{dataset_name}/{embedding_model}/baseline___distance_type={pipeline_kwargs['distance']}"
+                            experiment_name = f"{dataset_name}/{embedding_model_save_name}/baseline___distance_type={pipeline_kwargs['distance']}"
                         if not os.path.exists(pipeline_kwargs["query_embeddings_path"]) or not os.path.exists(pipeline_kwargs["passage_embeddings_path"]):
                             pipeline_kwargs["model_name"] = embedding_model
                         pipeline = Pipeline(experiment_name, **pipeline_kwargs)
