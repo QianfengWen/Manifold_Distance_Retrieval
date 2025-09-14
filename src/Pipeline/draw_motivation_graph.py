@@ -3,33 +3,26 @@ import matplotlib.pyplot as plt
 import scienceplots
 from sklearn.neighbors import kneighbors_graph
 from scipy.sparse.csgraph import shortest_path
+from sklearn import datasets, manifold
 plt.style.use(['science', 'no-latex'])
 
 # --- Create an 'S'-shaped manifold ---
-def generate_s_shape(n_points=500, noise_std=0.01):
+def generate_s_shape(n_points=1500, noise_std=0.01):
     """
-    Generates an 'S' shape in 2D. 
-    Adds slight Gaussian noise for realism.
+    Generates an swiss roll dataset
     """
-    t = np.linspace(0, 2 * np.pi, n_points)
-    x = np.sin(t)
-    y = 0.2 * np.sign(t - np.pi) * (1 - np.cos(t))  
+    X, color = datasets.make_s_curve(n_samples=n_points, noise=noise_std, random_state=42)
+    # Find points within the target region
+    # Fixed the conditions - removed duplicate condition and adjusted ranges
+    query_region = (X[:, 1] > 0.8) & (X[:, 1] < 1.2) & (X[:, 0] > 0.7) & (X[:, 0] < 1.3) & (X[:, 2] > 1)
+    target_region = (X[:, 1] > -1.5) & (X[:, 1] < 1.5) & (X[:, 0] > -0.5) & (X[:, 0] < 0.5) & (X[:, 2] < 1) & (X[:, 2] > -1)
     
-    # Add slight Gaussian noise to 2D points
-    noise = np.random.normal(0, noise_std, (n_points, 2))
-    return np.column_stack([x, y]) + noise
-
-def generate_linear_fold(n_points=484):
-    """
-    Generates a flat plane in 2D.
-    By default, n_points=484 (22x22), so indices from 0 to 483 are valid.
-    """
-    side = int(np.round(np.sqrt(n_points)))
-    grid_x, grid_y = np.meshgrid(
-        np.linspace(0, 1, side),
-        np.linspace(0, 1, side)
-    )
-    return np.column_stack([grid_x.ravel(), grid_y.ravel()])
+    # choose query and target
+    query = X[query_region][np.argmax(X[query_region][:, 2])]
+    print(query)
+    target = X[target_region][np.argmin(X[target_region][:, 2])]
+        
+    return X, query, target
 
 # --- Shortest path helper: reconstruct path from predecessors ---
 def reconstruct_path(predecessors, start_idx, goal_idx):
@@ -55,7 +48,7 @@ def reconstruct_path(predecessors, start_idx, goal_idx):
 
 # --- Plot S-shape ---
 def plot_s_shape():
-    s_shape = generate_s_shape(n_points=500)
+    s_shape, query, target = generate_s_shape(n_points=1500)
 
     # Use a reasonably large k to keep the graph connected
     k = 10
@@ -63,144 +56,98 @@ def plot_s_shape():
     # Compute all shortest paths
     manifold_distances, predecessors = shortest_path(graph, directed=False, return_predecessors=True)
 
-    # Choose two points
-    query_idx = 250
-    passage_idx = 20
+    # Choose query point
+    query_idx = np.where(s_shape == query)[0][0]
+    target_idx = np.where(s_shape == target)[0][0]
+    # Calculate manifold distances from query to all points
+    manifold_distances_from_query = manifold_distances[query_idx]
     
-    query = s_shape[query_idx]
-    passage = s_shape[passage_idx]
+    # calculate l2 distance from query to target
+    l2_distances_from_query = np.linalg.norm(s_shape - query, axis=1)
 
-    # Define radius for positive points
-    radius = 1.2  # Adjust this value to change the size of the positive region
+    def create_plot(distances, title):
+        fig = plt.figure(figsize=(7, 4), facecolor="white")
+        ax = fig.add_subplot(111, projection='3d')
+        
+        # Normalize distances to [0,1] for better color contrast
+        distances_normalized = distances / distances.max()
+        
+        # Create mask for non-query and non-target points
+        mask = ~((s_shape[:, 0] == query[0]) & (s_shape[:, 1] == query[1]) & (s_shape[:, 2] == query[2])) & ~((s_shape[:, 0] == target[0]) & (s_shape[:, 1] == target[1]) & (s_shape[:, 2] == target[2]))
+        points_to_plot = s_shape[mask]
+        distances_to_plot = distances_normalized[mask]
+        
+        col = ax.scatter(points_to_plot[:, 0], points_to_plot[:, 1], points_to_plot[:, 2],
+                        c= distances_to_plot,
+                        cmap='YlGnBu',
+                        s=5,
+                        alpha=0.7)
+        
+        # Plot query point
+        
+        ax.plot(query[0], query[1], query[2], 
+                color='#934B43',
+                marker='*',
+                linewidth=3,
+                zorder=200)
+        # include label 'Query' as a point in legend
+        ax.scatter([], [], [], label='Query', color='#934B43', marker='*', s=50, zorder=200)
+        
+        # Plot target point
+        ax.plot(target[0], target[1], target[2],
+                color='#14517C',
+                marker='*',
+                linewidth=3,
+                zorder=200)
+        # include label 'Target' as a point in legend
+        ax.scatter([], [], [], label='Sample Passage', color='#14517C', marker='*', s=50, zorder=200)
+        
+        # Draw L2 (straight) path
+        ax.plot([query[0], target[0]], 
+                [query[1], target[1]], 
+                [query[2], target[2]], 
+                'r--', 
+                label='Euclidean Path',
+                color='#934B43',
+                linewidth=2,
+                zorder=100)
+        
+        # Draw manifold path if this is the manifold distance plot
+        if title == 'Manifold Distances':
+            path_indices = reconstruct_path(predecessors, query_idx, target_idx)
+            path_points = s_shape[path_indices]
+            ax.plot(path_points[:, 0], 
+                    path_points[:, 1], 
+                    path_points[:, 2], 
+                    'g--', 
+                    label='Manifold Path',
+                    color='#14517C',
+                    linewidth=2,
+                    zorder=100)
+        
+        ax.view_init(azim=-60, elev=9)
+        # remove ticks lebel, but keep grid
+        ax.xaxis.set_ticklabels([])
+        ax.yaxis.set_ticklabels([])
+        ax.zaxis.set_ticklabels([])
+        ax.legend(fontsize=10, loc = 'lower center', ncol=4)
+        
+        cb = fig.colorbar(col, orientation="vertical", 
+                shrink=0.7, aspect=20, pad=0.1)
+        cb.ax.invert_yaxis()
+        cb.ax.set_title('Relevance',fontsize=10)
+        cb.ax.set_xticks([])  # Remove x ticks
+        cb.ax.set_yticks([])  # Remove y ticks
+
+        plt.tight_layout()
+        return fig
+
+    # Create and save manifold distances plot
+    fig1 = create_plot(manifold_distances_from_query, 'Manifold Distances')
+    fig1.savefig('manifold_distances.pdf', bbox_inches='tight')
     
-    # Calculate manifold distances from point A to all points
-    distances_from_a = manifold_distances[query_idx]
-    
-    # Create boolean mask for points within radius
-    positive_mask = distances_from_a <= radius
-
-    # Compute Euclidean (L2) distance
-    l2_distance = np.linalg.norm(query - passage)
-
-    # Compute manifold (graph) distance
-    manifold_distance = manifold_distances[query_idx, passage_idx]
-
-    # Check if there is a valid path
-    if np.isinf(manifold_distance):
-        print(f"No path found between {query_idx} and {passage_idx}. Try increasing k.")
-        path_coords = np.vstack([query, passage])
-    else:
-        path_indices = reconstruct_path(predecessors, query_idx, passage_idx)
-        path_coords = s_shape[path_indices]
-
-    # --- Plot ---
-    plt.figure(figsize=(10, 8))
-
-    # Scatter points with different colors based on distance
-    plt.scatter(s_shape[~positive_mask, 0], s_shape[~positive_mask, 1],
-               label="Negative Passages", color="grey", alpha=0.6)
-    plt.scatter(s_shape[positive_mask, 0], s_shape[positive_mask, 1],
-               label="Positive Passages", color="#FFBE7A", alpha=0.6)
-    # Highlight chosen points
-    plt.scatter(query[0], query[1], color='#FA7F6F', label="Query", marker='*', s=200, zorder=10)
-    plt.scatter(passage[0], passage[1], color='#2878B5', label="Passage Found", marker='X', s=100, zorder=10)
-
-    # Draw the straight (L2) line
-    plt.plot([query[0], passage[0]],
-             [query[1], passage[1]],
-             linestyle='--', color='#D8383A',
-             label=f"Euclidean Distance = {l2_distance:.2f}")
-
-    # Draw manifold path if valid
-    if len(path_coords) > 1:
-        plt.plot(path_coords[:, 0],
-                path_coords[:, 1],
-                color='black',
-                linestyle='--',
-                label=f"Manifold Distance = {manifold_distance:.2f}")
-
-    plt.xlabel("X")
-    plt.ylabel("Y")
-    plt.legend(frameon=True, framealpha=1, fancybox=False, edgecolor='black', facecolor='white')
-    plt.title("Comparative Analysis of Manifold and Euclidean Distances in S-shaped Embedding Space Retrieval", fontsize=16)
-
-    # save figure to pdf
-    plt.savefig('s_shape.pdf', bbox_inches='tight')
-
-# --- Plot linear fold ---
-def plot_linear_fold():
-    linear_fold = generate_linear_fold(n_points=484)
-
-    # For a grid of 22x22, k=10 may or may not keep the whole graph connected.
-    # Feel free to try k=15 or k=20 if you get no path.
-    k = 8
-    graph = kneighbors_graph(linear_fold, n_neighbors=k, mode='distance', include_self=False)
-    # Compute all shortest paths
-    manifold_distances, predecessors = shortest_path(graph, directed=False, return_predecessors=True)
-
-    # Choose two points
-    query_idx = 10
-    passage_idx = 170  # valid because we have 0..483
-
-    query = linear_fold[query_idx]
-    passage = linear_fold[passage_idx]
-
-    # Define radius for positive points
-    radius = 0.5  # Adjust this value to change the size of the positive region
-    
-    # Calculate manifold distances from point A to all points
-    distances_from_a = manifold_distances[query_idx]
-    
-    # Create boolean mask for points within radius
-    positive_mask = distances_from_a <= radius
-
-    # Euclidean distance
-    l2_distance = np.linalg.norm(query - passage)
-
-    # Manifold distance
-    manifold_distance = manifold_distances[query_idx, passage_idx]
-
-    if np.isinf(manifold_distance):
-        print(f"No path found between {query_idx} and {passage_idx}. Try increasing k.")
-        path_coords = np.vstack([query, passage])
-    else:
-        path_indices = reconstruct_path(predecessors, query_idx, passage_idx)
-        path_coords = linear_fold[path_indices]
-
-    # --- Plot ---
-    plt.figure(figsize=(10, 8))
-
-    # Scatter points with different colors based on distance
-    plt.scatter(linear_fold[~positive_mask, 0], linear_fold[~positive_mask, 1],
-               label="Negative Passages", color="#999999", alpha=0.6)
-    plt.scatter(linear_fold[positive_mask, 0], linear_fold[positive_mask, 1],
-               label="Positive Passages", color="#FFBE7A", alpha=0.6)
-
-    # Points and direct L2 line
-    plt.scatter(query[0], query[1], color='#FA7F6F', label="Query", marker='*', s=200, zorder=10)
-    plt.scatter(passage[0], passage[1], color='#2878B5', label="Passage Found", marker='X', s=100, zorder=10)
-    plt.plot([query[0], passage[0]],
-             [query[1], passage[1]],
-             linestyle='--', color='#D8383A',
-             label=f"Euclidean Distance = {l2_distance:.2f}")
-
-    # Manifold path
-    if len(path_coords) > 1:
-        plt.plot(path_coords[:, 0],
-                path_coords[:, 1],
-                linestyle='--',
-                color='black',
-                label=f"Manifold Distance = {manifold_distance:.2f}")
-
-    plt.xlabel("X")
-    plt.ylabel("Y")
-    plt.legend(frameon=True, framealpha=1, fancybox=False, edgecolor='black', facecolor='white')
-    plt.title("Comparative Analysis of Manifold and Euclidean Distances in Linear Embedding Space Retrieval", fontsize=16)
-
-    # save figure to pdf
-    plt.savefig('linear_fold.pdf', bbox_inches='tight')
+    plt.show()
 
 # --- Main ---
 if __name__ == "__main__":
     plot_s_shape()
-    plot_linear_fold()
